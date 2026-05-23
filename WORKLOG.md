@@ -208,3 +208,57 @@ In strong order of likelihood:
 
 No more software-side options available. Pause this session until the cable
 can be inspected with a multimeter.
+- 2026-05-23 22:00:12  check_wiring on COM11: awake=False wake_via_dtr=True banner_bytes=0 file=20260523-220008_check_wiring.log
+
+---
+
+## 2026-05-23 — Session 3: communication established
+
+User physically swapped Rx and Tx at the cable side and re-ran
+`scripts/check_wiring.py --port COM11`. Result:
+
+```
+[loopback]   success=True
+[awake-try]  success=False  no reply within 1 s.
+[wake+DTR]   success=True   raw=01  banner=0 B
+             OI mode reply = 1 after BRC pulse.
+PASS: Rx/Tx and ground are correctly wired.
+```
+
+### What this confirms about the cable
+
+- **Rx/Tx polarity:** the original wiring was reversed. With the swap, both
+  directions now work.
+- **GND:** must have already been correct (a swap alone could not have fixed
+  things otherwise).
+- **DTR is wired to BRC** and the polarity is normal (pyserial `dtr=True`
+  drives BRC low). One DTR low pulse of 250 ms is enough to wake the robot.
+- **Phase A failed (no reply without a wake pulse).** Consistent with the
+  700-series sleep behavior reported in the public sources: the robot really
+  is asleep, even though we removed it from the dock minutes ago.
+
+### First observed deviation from 500-series OI
+
+The 500-series spec says a BRC wake pulse causes the firmware to emit an ASCII
+banner over TXD (`bl-start, ... Roomba by iRobot!, version 3.X.X ...`).
+
+**Our wake produced banner = 0 bytes.** The Roomba accepted the subsequent
+`Start (128)` + `Sensors (142, 35)` and replied with the correct OI mode, so
+the data path works — but no banner was printed.
+
+This could be:
+  (a) a real 770 vs 500 deviation — the 700-series firmware just doesn't
+      print a banner on BRC wake, OR
+  (b) the robot wasn't in *deep* Off, only in Passive idle, so there was
+      nothing to print.
+
+To disambiguate we need to put it in deep Off (e.g. send `Power (133)`, or
+wait 5+ min), then BRC-wake while running `scripts/wake_and_banner.py` with a
+long listen window. We'll do that next session.
+
+### Captures from this session
+
+- `captures/20260523-215517_check_wiring.log`  (pre-swap, all silent)
+- `captures/20260523-215642_check_wiring.log`  (pre-swap, after dock-out, still silent)
+- `captures/20260523-215803_probe_brc_lines.log`  (pre-swap, 8-way sweep, all silent)
+- `captures/20260523-220008_check_wiring.log`  (post-swap, **PASS**)
