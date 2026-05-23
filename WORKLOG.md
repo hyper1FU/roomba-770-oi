@@ -87,3 +87,61 @@ Key findings from public sources:
    commands. This will be a separate session.
 
 
+- 2026-05-23 21:55:23  check_wiring on COM11: awake=False wake_via_dtr=False banner_bytes=0 file=20260523-215517_check_wiring.log
+
+---
+
+## 2026-05-23 — Session 2: first hardware connection (CH340 USB-Serial, COM11)
+
+### What we observed
+
+- The USB-Serial dongle enumerates as `USB-SERIAL CH340 (COM11)` with VID:PID
+  `1A86:7523`. (See `list_ports` output captured this session.)
+- Ran `scripts/check_wiring.py --port COM11`:
+  - **Loopback** test (write `0xA5`, read back): no echo. Good — the dongle's
+    Rx and Tx are not tied together, so any byte we read in later phases really
+    came from the Roomba.
+  - **Phase A** (assume awake, 115200): `Start (128)` then `Sensors (142, 35)` →
+    **0 bytes** in 1 s.
+  - **Phase B** (BRC wake via DTR low 250 ms): no boot banner at all; OI-mode
+    query again returned **0 bytes**.
+  - **Phase C** (fallback 19200 baud): also 0 bytes.
+- Captured log: `captures/20260523-215517_check_wiring.log`.
+
+### Interpretation
+
+Zero bytes in either direction, in any phase, when the loopback test confirms the
+USB adapter itself is healthy. That rules out:
+
+- Adapter dead / driver broken (loopback would have showed garbage).
+- Adapter Rx-Tx shorted internally (loopback would have echoed).
+- Wrong baud as the *only* fault (we tried both documented bauds).
+
+That leaves these candidates, in order of likelihood:
+
+1. **Rx and Tx are swapped at the Mini-DIN side.** Cable TX should drive
+   Roomba *pin 3* (Roomba's RxD); cable RX should listen on Roomba *pin 4*
+   (Roomba's TxD). If the cable plug is wired the other way around, neither
+   direction works — exactly what we see.
+2. **Ground not actually connected.** Without a common GND between the dongle
+   and the Roomba (Mini-DIN pin 6 or 7), the TTL levels float and nothing is
+   decoded on either side.
+3. **BRC line not connected at all (or wired to a non-controllable pin).** The
+   robot is still in deep Off mode and our DTR pulse is going nowhere. We'd
+   expect at least a boot banner if BRC worked; we got 0 bytes.
+4. **Roomba is asleep at the firmware level beyond what BRC alone can wake.**
+   Possible on a 700-series after a long idle; usually fixed by pressing the
+   physical CLEAN button on the robot first to wake it, then connecting.
+5. TTL voltage mismatch / damaged input — only if the dongle is actually a
+   true RS-232 (±12 V) one. CH340 boards are TTL by default, so unlikely.
+
+### Next steps
+
+- Press the CLEAN button on the Roomba once (LEDs should light up briefly).
+  Then re-run `scripts/check_wiring.py --port COM11`. If we now get a reply,
+  the wiring is fine and the robot was just deep-asleep.
+- If still 0 bytes: physically swap the Rx and Tx wires at the Mini-DIN
+  connector, then rerun. A single byte (0..3) returned proves Rx/Tx polarity.
+- If still 0 bytes after both: confirm GND continuity with a multimeter from
+  the USB shell to Mini-DIN pin 6 or 7.
+
