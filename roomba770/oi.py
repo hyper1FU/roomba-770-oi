@@ -125,6 +125,29 @@ class Roomba:
         self.send_opcode(142, [packet_id])
         return self.read_exactly(expect_bytes, timeout_s=timeout_s)
 
+    def drive_direct(self, right_mm_s: int, left_mm_s: int) -> None:
+        """Drive each wheel independently in signed mm/s. Range -500..500.
+
+        Values outside the range are clamped silently. This is the only
+        movement command we ever use — it leaves the vacuum and brushes off.
+        """
+        rh, rl = _signed16_be(right_mm_s)
+        lh, ll = _signed16_be(left_mm_s)
+        self.send_opcode(145, [rh, rl, lh, ll])
+
+    def all_motors_off(self) -> None:
+        """Halt all wheel motion. Does NOT touch the vacuum/brushes (which we
+        also never started, so they stay off)."""
+        self.drive_direct(0, 0)
+
+
+def _signed16_be(v: int) -> tuple[int, int]:
+    """Clamp v to [-500, 500] (Drive Direct's range) then return (hi, lo)."""
+    v = max(-500, min(500, int(v)))
+    if v < 0:
+        v += 0x10000
+    return (v >> 8) & 0xFF, v & 0xFF
+
 
 def hexlify(b: bytes, sep: str = " ") -> str:
     return sep.join(f"{x:02X}" for x in b)

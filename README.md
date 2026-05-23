@@ -30,10 +30,25 @@ uv run python -m scripts.list_ports
 | Script | Purpose |
 | --- | --- |
 | `scripts/list_ports.py`     | Enumerate available serial ports. |
+| `scripts/check_wiring.py`   | Verify Rx/Tx/GND wiring with a known-good OI exchange. |
+| `scripts/probe_brc_lines.py`| Sweep DTR/RTS × polarity × pulse width to find the BRC line. |
 | `scripts/wake_and_banner.py`| Pulse BRC low, capture any text banner the robot emits at boot/wake. |
 | `scripts/probe_opcodes.py`  | Send each documented opcode, log how Roomba responds (silence / mode change / data). |
 | `scripts/probe_sensors.py`  | Read every sensor packet ID 0..107, log size + raw bytes, flag unexpected. |
 | `scripts/probe_stream.py`   | Try the `Stream`/`Pause Stream`/`Resume Stream`/`Query List` commands. |
+| `scripts/teleop_gui.py`     | Tkinter arrow-key teleop. Drives the wheels only; **never engages the vacuum / brushes**. |
+
+### Teleop
+
+```powershell
+uv run python scripts/teleop_gui.py --port COM11
+```
+
+Click in the window so it has keyboard focus, then hold the arrow keys.
+Space = emergency stop, R = reconnect (BRC wake + Start + Safe), Q / Esc / close
+= stop and quit. Watchdog halts the wheels if no arrow key is seen for ~120 ms.
+The robot stays in Safe mode, so its built-in cliff / wheel-drop / charger
+safeties will stop it for you.
 
 All probes log to `captures/<timestamp>_<probe>.log` and append a summary line to `WORKLOG.md`.
 

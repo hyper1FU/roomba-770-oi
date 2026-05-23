@@ -262,3 +262,62 @@ long listen window. We'll do that next session.
 - `captures/20260523-215642_check_wiring.log`  (pre-swap, after dock-out, still silent)
 - `captures/20260523-215803_probe_brc_lines.log`  (pre-swap, 8-way sweep, all silent)
 - `captures/20260523-220008_check_wiring.log`  (post-swap, **PASS**)
+
+---
+
+## 2026-05-23 — Session 4: arrow-key teleop GUI
+
+Built `scripts/teleop_gui.py` (Tkinter) so we can drive the robot from the
+keyboard without the vacuum running. The whole point is to be able to put it
+on a table or floor, exercise the wheels with realistic load, and look at
+sensors live — without the noise / mess of cleaning motors.
+
+### Design choices
+
+- **Vacuum / brushes stay off** because we never send opcodes 135 (Clean),
+  134 (Spot), 136 (Max), 138 (Motors), or 144 (PWM Motors). The Roomba does
+  not auto-start brushes when entering Safe mode; you have to explicitly tell
+  it to.
+- **Motion uses Drive Direct (145) only.** Per-wheel signed mm/s in
+  [-500, 500], clamped in `roomba770/oi.py` by the new `drive_direct()`
+  helper (and its companion `_signed16_be()`).
+- **Safe mode**, not Full. The firmware still does cliff / wheel-drop /
+  charger-attached interlocks. If a cliff fires, the robot ignores further
+  motion commands until the OI is "reset" to Safe again.
+- **Key freshness watchdog.** Tkinter's KeyRelease timing is unreliable —
+  Windows fires it only on actual release, but X11 fires KeyRelease and a
+  fresh KeyPress on every auto-repeat tick. We sidestep that by tracking a
+  "last-seen" time per arrow key and treating the key as held only if its
+  last KeyPress was within 120 ms. KeyRelease shoves the timestamp 80 ms
+  into the past, so a real release expires in 40 ms but an immediate X11
+  auto-repeat press refreshes it back. Works the same on both platforms.
+- **Heartbeat.** Even when velocity hasn't changed, we re-send Drive Direct
+  every ~200 ms. Some Roomba firmware revisions are reported to halt motion
+  if no command has been received for ~1 s; this stays well under that.
+- **Safety on shutdown.** Window close, focus loss, Quit, Escape, Q, and any
+  serial exception all path through a `drive_direct(0, 0)`. A `<FocusOut>`
+  binding clears all held keys so the wheels don't latch on if the user
+  Alt-Tabs.
+- **Telemetry at ~1 Hz** when no arrow key is held: voltage, current,
+  temperature, battery %, charging state (group packet 3 = 10 bytes), plus
+  bumper / wheel-drop bitfield (packet 7 = 1 byte). Skipped when actively
+  driving so we don't interleave 142 replies with the next 145 send.
+
+### Files touched
+
+- `roomba770/oi.py`: added `_signed16_be()`, `drive_direct(right, left)`,
+  `all_motors_off()`.
+- `scripts/teleop_gui.py`: new.
+
+### Not yet tested
+
+- Did NOT launch the GUI in this session (would require driving the robot).
+  Help/argparse parses, helpers import, signed-16 encoding spot-checked
+  (`150 → 00 96`, `-150 → FF 6A`, `±500 boundary`, clamp at `9999 → 01 F4`).
+- User to run `uv run python scripts/teleop_gui.py --port COM11` with the
+  Roomba on the floor and report behavior. Watch for:
+    - Window connects and shows "OI mode = 2 (safe)".
+    - Each arrow drives the right wheels in the right direction.
+    - Watchdog halts motion when keys are released.
+    - Telemetry numbers look sane (voltage ~14-16 V, capacity > 0).
+    - **No vacuum or brushes turn on at any point.**
