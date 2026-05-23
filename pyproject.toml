@@ -1,0 +1,14 @@
+[project]
+name = "roomba770"
+version = "0.0.1"
+description = "Probe scripts for investigating Roomba 770 (700-series) Open Interface vs documented 500/600 OI."
+requires-python = ">=3.10"
+dependencies = [
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+dev = []
+
+[tool.uv]
+package = false

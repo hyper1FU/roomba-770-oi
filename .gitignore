@@ -1,0 +1,15 @@
+# uv / Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.python-version
+
+# Captured probe data (kept out of git by default — change if you want to commit a session)
+captures/*.bin
+captures/*.raw
+
+# OS
+Thumbs.db
+.DS_Store
