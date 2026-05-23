@@ -145,3 +145,66 @@ That leaves these candidates, in order of likelihood:
 - If still 0 bytes after both: confirm GND continuity with a multimeter from
   the USB shell to Mini-DIN pin 6 or 7.
 
+- 2026-05-23 21:56:48  check_wiring on COM11: awake=False wake_via_dtr=False banner_bytes=0 file=20260523-215642_check_wiring.log
+- 2026-05-23 21:58:35  probe_brc_lines on COM11: any_reply=False, file=20260523-215803_probe_brc_lines.log
+
+---
+
+## 2026-05-23 — Session 2 cont'd: woke Roomba off the dock, re-tested
+
+User took the Roomba off the dock to wake it. Re-ran `check_wiring.py`:
+**still 0 bytes**, identical to before. Sleep ruled out.
+
+To exhaust the remaining software-side variables, wrote `scripts/probe_brc_lines.py`
+which sweeps every plausible BRC wake configuration:
+
+    line ∈ {DTR, RTS}  ×  asserted ∈ {True, False}  ×  pulse_ms ∈ {250, 1000}
+
+All 8 combinations: **0 bytes received**, with no banner, no garbage, no anything.
+Also logged the modem-status lines (CTS/DSR/RI/CD): all stayed at 0 throughout
+every variant, confirming the cable has no internal loopback between the
+control lines and that the BRC pin (if connected) doesn't feed back into a
+status line.
+
+### What this rules out
+
+- Roomba in deep sleep (we woke it physically by removing it from the dock).
+- Wrong baud (we tried 115200 and 19200).
+- Wrong BRC line (DTR vs RTS).
+- Wrong BRC polarity (asserted True or False).
+- Insufficient wake pulse (we tried up to 1000 ms — 20× the documented minimum).
+- USB adapter Rx/Tx tied together (loopback check passed).
+- BRC mistakenly wired to a modem-status line (CTS/DSR/RI/CD never moved).
+
+### What remains as candidate causes (hardware)
+
+In strong order of likelihood:
+
+1. **TX and RX swapped on the Mini-DIN side.** USB-side TX must reach Roomba
+   pin 3; USB-side RX must reach Roomba pin 4. Symmetric symptom: neither
+   direction works.
+2. **GND not actually bonded between USB shell and Mini-DIN pin 6 or 7.**
+   Without a common reference both sides see floating TTL.
+3. **Broken wire inside the cable** (especially the Mini-DIN end, which is
+   famously fragile on these cables).
+4. **CH340 TX line not actually driving an idle high.** Easy to verify with
+   a multimeter: TX-to-GND should sit at ~3.3 V (or ~5 V depending on the
+   CH340 board) when nothing is being sent.
+
+### Recommended physical-debug order
+
+1. Multimeter (DC volts, with USB shell as GND reference):
+   - Mini-DIN pin 6 or 7 ↔ USB shell: continuity / 0 V drop. Confirms GND.
+   - USB-side TX ↔ USB shell: ~3.3 V (or ~5 V) idle. Confirms CH340 drives.
+   - Mini-DIN pin 3 ↔ USB shell while idle: should match the above — confirms
+     TX reaches Roomba.
+   - Mini-DIN pin 4 ↔ USB shell while Roomba is awake: should also idle at
+     ~3.3 V — confirms Roomba TX is driving its end.
+2. Physically swap pin 3 and pin 4 at the Mini-DIN side, re-run
+   `scripts/check_wiring.py --port COM11`. A single byte (`0..3`) returned
+   proves the polarity.
+3. If still nothing: try a known-good cable, or trace continuity from each
+   Mini-DIN pin to its USB-side wire.
+
+No more software-side options available. Pause this session until the cable
+can be inspected with a multimeter.
