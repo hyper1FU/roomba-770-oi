@@ -1,0 +1,19 @@
+# check_wiring on COM11 @ 115200
+
+[loopback]   success=True  raw=-
+             no echo (expected for Roomba — Tx is connected only to the robot, not back to our Rx).
+[awake-try]  success=False  raw=-
+             no reply within 1 s.
+[wake+DTR]   success=False  raw=-  banner=0 B
+             no reply (banner=0 B, mode=)
+
+[fallback]   retrying at 19200 baud ...
+             success=False raw=-  detail=no reply within 1 s.
+
+FAIL: no reply from Roomba.
+Most likely causes, in order:
+  1. Rx and Tx are swapped. The cable's TX should go to Roomba pin 3 (RxD into Roomba); the cable's RX should go to Roomba pin 4 (TxD from Roomba). Swap them.
+  2. No ground. The cable's GND must be tied to Roomba pin 6 or 7.
+  3. BRC not on a controllable line. We tried pulsing DTR, but your cable may wire BRC to RTS, or to nothing. Try pulsing manually (tie BRC to GND briefly) and rerun.
+  4. TTL voltage mismatch. The Roomba expects 3.3-5 V TTL. If your adapter is true RS-232 (±12 V) without a level shifter, you may have damaged the input.
+  5. Baud rate. Default is 115200; we also tried 19200 as a fallback.

@@ -321,3 +321,191 @@ sensors live — without the noise / mess of cleaning motors.
     - Watchdog halts motion when keys are released.
     - Telemetry numbers look sane (voltage ~14-16 V, capacity > 0).
     - **No vacuum or brushes turn on at any point.**
+- 2026-05-24 11:57:14  probe_sensors: 63 documented + 65 undocumented on COM11, file=20260524-115646_probe_sensors.log
+
+---
+
+## 2026-05-24 — Session 5: full OI investigation, 770 vs 500/600/Create-2
+
+User confirmed the teleop GUI works and all telemetry values look correct, so
+the data path is verified end-to-end. Ran the four probes in order with a
+BRC wake added at the top of each (`scripts/_common.py::wake_brc`).
+
+### Probe 1: `probe_sensors.py` (all packet IDs 0..127)
+
+`captures/20260524-115646_probe_sensors.log`
+
+- **Every documented packet (7..58) and every documented group (0..6, 100,
+  101, 106, 107) returned exactly the documented number of bytes.** Includes
+  the Create-2-only packets (43..58): left/right encoders, light bumper +
+  six light-bump signals, IR char L/R, four motor currents, stasis. **The
+  770 implements the full Create-2 sensor packet set, not just the 500 set.**
+
+- **Cargo Bay (pkts 32, 33) returned all-zero** as expected — the 770 has no
+  cargo connector, so these slots are present but inert.
+
+- **Stasis (pkt 58) returned `0x02`, not `0x00` or `0x01`** as documented.
+  Likely the "disabled" bit (bit 1) is set, but worth flagging as a
+  documentation-vs-actual deviation.
+
+- **Undocumented packet IDs 59..127 ALL respond.** Most return 2 bytes of
+  zero, but four of them return non-trivial data on every read:
+  ```
+  pkt  59          1B  = 00
+  pkt  60          2B  = 09 32   (= 2354)   ≈ pkt 28 (Cliff Left Signal = 2368)
+  pkt  61          2B  = 09 1E   (= 2334)   ≈ pkt 31 (Cliff Right Signal = 2375)
+  pkt  62          2B  = 03 45   (=  837)
+  pkt  63          2B  = 00 00
+  pkt  64          2B  = 03 56   (=  854)
+  pkt  65          2B  = 00 00
+  pkt 108         13B  = 00 (09 2A) (09 1B) (03 45) (00 00) (03 56) (00 00)
+  ```
+  Packet 108 is clearly a group packet aggregating 59..65 (1B + 6×2B).
+  The values in 60, 61, 62, 64 are sensor-like (steady, in cliff-signal
+  magnitudes). My current hypothesis: these are extra IR / wall-tracking
+  signals reserved by iRobot but never documented in the OI spec. The 770
+  exposes them anyway. Need a "drive while polling" experiment to confirm
+  they vary with the environment.
+
+### Probe 2: `probe_stream.py` — Stream / Pause / Resume / Query List
+
+`captures/20260524-121939_probe_stream.log`
+
+This is where the **opcode table I started with was wrong**. The reference I
+wrote up first had `147=Stream, 148=Query List, 149=Pause/Resume`. In fact
+the 500-series spec — and the 770 confirmed by experiment — uses:
+
+| opcode | function | 770? |
+| --- | --- | --- |
+| 148 | Stream                | **YES** — sent `148, 3, 7, 35, 22`, got 199 valid frames in 3.0 s. |
+| 149 | Query List            | **YES** — sent `149, 3, 7, 35, 22`, got exactly 4 bytes: 1B+1B+2B = pkts 7, 35, 22. |
+| 150 | Pause/Resume Stream   | **YES** — `150, 0` immediately silenced the stream (0 B in 1 s); `150, 1` resumed it. |
+
+- Frame format on 770 is `header=19, n, [pkt_id, payload]*, checksum` with
+  `(sum of all bytes incl. checksum) mod 256 == 0`. Every captured frame
+  passed the checksum.
+- **Stream rate ~66 Hz, not 15 Hz**. 199 frames in 3.0 s = 66 fps; the
+  500-series spec documents 15 Hz as the rate. The 770 firmware ships them
+  far more aggressively. (Confirmed by frame count, not just bandwidth: each
+  frame is 10 bytes here, so 660 B/s × 8 bits = ~5300 bps — well under the
+  115200 baud limit.)
+- `opcodes.py` and `docs/oi_reference.md` updated to reflect 148=Stream.
+
+### Probe 3: `probe_opcodes.py` (safe set, with stream-pause after 148)
+
+`captures/<latest>_probe_opcodes.log`
+
+After patching the probe to send `150, 0` immediately after every Stream
+test, every other opcode returned cleanly. Findings:
+
+| opcode | name             | 770 result |
+| ------ | ---------------- | ---------- |
+| 128 | Start              | OI mode → 1 ✓ |
+| 129 | Baud              | accepted (sent code 11 = 115200, no-op) ✓ |
+| 131 | Safe              | OI mode → 2 ✓ |
+| 132 | Full              | OI mode → 3 ✓ |
+| 142 | Sensors            | works for every packet (Probe 1) |
+| 148 | Stream             | works (Probe 2) |
+| 152 | Script             | accepted silently |
+| 153 | Play Script        | accepted silently |
+| 154 | Show Script        | **0 bytes reply** — does not appear to return the stored script as documented. Either Show Script is unimplemented on the 770, or our prior Script (152) was silently rejected. |
+| 155 | Wait Time          | accepted (no-op outside a script) |
+| 156 | Wait Distance      | accepted |
+| 157 | Wait Angle         | accepted |
+| 158 | Wait Event         | accepted |
+| 162 | Schedule LEDs      | accepted silently (no digit display, but firmware doesn't reject) |
+| 163 | Digit LEDs Raw     | accepted silently |
+| 164 | Digit LEDs ASCII   | accepted silently |
+| 165 | Buttons            | accepted (sent 0 = press nothing) |
+| 173 | Stop               | OI mode → **1 (Passive), NOT 0 (Off)** as Create-2 spec says. Also dumps ASCII text (see below). |
+
+Did **not** probe 167 (Schedule) or 168 (Set Day/Time) because they would
+overwrite the user's on-robot clock and schedule. Add to a later opt-in run.
+
+### Probe 4: `capture_stop_banner.py` — the big new finding
+
+`captures/20260524-121705_stop_banner.bin`, `..._122131_stop_banner.bin`
+
+**In OFF mode (i.e. after `Stop`), the 770 firmware continuously prints
+human-readable ASCII battery telemetry over TXD at 1 line per second.**
+This is completely undocumented in any OI spec. Format:
+
+```
+bat:   min 863  sec 54  mV 18229  mA 1070  tenths-deg-C 362  mAH 2696  state 5
+bat:   min 863  sec 55  mV 18202  mA 1070  tenths-deg-C 362  mAH 2696  state 5
+bat:   min 863  sec 56  mV 18202  mA 1070  tenths-deg-C 362  mAH 2696  state 5
+```
+
+Fields:
+- `min` and `sec`: monotonic uptime counters (`sec` rolls 0..59, `min` is
+  cumulative; we saw 859..864 across captures, i.e. ~14 h since power-on).
+- `mV`: instantaneous battery voltage. 16977 mV when idle on the dock with
+  the OI off; jumped to 18229 mV when charging current was flowing.
+- `mA`: signed instantaneous current. ~0 when idle, **+1070 mA when actively
+  charging** (and presumably negative when discharging).
+- `tenths-deg-C`: temperature in 0.1 °C. 362-365 ≈ 36.2-36.5 °C.
+- `mAH`: battery charge (matches packet 25 = 2696 mAh).
+- `state`: internal battery-state machine number. Observed **5 (actively
+  charging) and 6 (idle/full)**, both outside the OI's documented Charging
+  State range 0..5.
+
+In addition to the `bat:` lines, transient event messages appear when the
+robot changes state, e.g.:
+
+```
+start-charge: 2012-08-22-1754-L   \r\n
+do-charging-...
+```
+
+The timestamp `2012-08-22-1754` is whatever the on-robot clock reads (which
+in our case is the factory default — the user hasn't set it). The trailing
+`-L` is probably "local time", and the format is `YYYY-MM-DD-HHMM`.
+
+### Summary of 770 vs 500/600/Create-2 OI
+
+| Aspect | 500 / Create-2 spec | 770 actual | Delta |
+| --- | --- | --- | --- |
+| Mini-DIN 7-pin, 115200 8N1 | yes | yes | — |
+| BRC wake banner | "Roomba by iRobot! version X.Y" | **silent** | DEVIATION |
+| Modes 0/1/2/3 | Off/Passive/Safe/Full | same | — |
+| Documented opcodes 128..173 (safe ones) | all spec'd | all accepted | — |
+| `Stop (173)` post-mode | Off (0) | **Passive (1)** | DEVIATION |
+| `Show Script (154)` | returns stored script | **returns 0 bytes** | DEVIATION (possibly unimplemented) |
+| Sensor packets 7..58 | spec'd sizes | match | — |
+| Light bumper packets 45..51 | Create-2 only | **works on 770** | match Create-2 |
+| `Stasis (58)` | 0/1 | **2** | DEVIATION (likely "disabled" bit) |
+| Undocumented packets 59..127 | not spec'd, expected silent | **all respond**; 60/61/62/64/108 carry real data | UNDOCUMENTED FEATURE |
+| `Stream (148)` rate | 15 Hz | **~66 Hz** | DEVIATION (faster) |
+| OFF-mode serial output | silent | **`bat:` telemetry + event log at 1 Hz** | UNDOCUMENTED FEATURE |
+
+### What we should not conclude (yet)
+
+- We cannot say `Show Script` is universally broken — there could be a state
+  setup issue. Worth a focused retest where we definitely store a script
+  first (and the storage acks somehow), then call Show Script in Passive.
+- `state 5/6` from the `bat:` log are not necessarily the same enum as OI's
+  Charging State (packet 21). Worth comparing the two over a longer trace.
+- We did NOT test 167 (Schedule), 168 (Set Day/Time), 144 (PWM Motors), 146
+  (Drive PWM), 134/135/136 (clean cycles), 138 (Motors). The motion ones we
+  can test via the teleop GUI; the cleaning / schedule ones need a separate
+  opt-in session.
+
+### Files updated this session
+
+- `roomba770/opcodes.py`: 148/149/150 corrected; spec tag `700?` upgraded to
+  `770` for packets / opcodes that have now been confirmed by experiment.
+- `docs/oi_reference.md`: same corrections.
+- `scripts/_common.py`: added `wake_brc()` helper.
+- `scripts/probe_sensors.py`, `probe_opcodes.py`, `probe_stream.py`: call
+  `wake_brc()` at the top so probes are robust to a sleeping robot.
+- `scripts/probe_opcodes.py`: removed 167/168 from default safe set; fixed
+  script-store payload from `[1, 153]` (causes recursive Play Script) to
+  `[2, 155, 0]` (stores a 2-byte no-op script `Wait Time 0`); inserted
+  `Pause Stream (150, 0)` right after probing opcode 148.
+- `scripts/probe_stream.py`: corrected pause opcode to 150 (was 149).
+- `scripts/capture_stop_banner.py`: new — Start, Stop, listen N seconds,
+  dump everything to file. Used to discover the OFF-mode `bat:` stream.
+- 2026-05-24 11:59:56  probe_opcodes: probed 18 opcodes on COM11, file=20260524-115952_probe_opcodes.log
+- 2026-05-24 12:19:45  probe_stream: stream-op=148, captured=1960 bytes, file=20260524-121938_probe_stream.log
+- 2026-05-24 12:20:46  probe_opcodes: probed 18 opcodes on COM11, file=20260524-122041_probe_opcodes.log
+- 2026-05-24 12:21:44  capture_stop_banner on COM11: 978 bytes, file=20260524-122131_stop_banner.bin

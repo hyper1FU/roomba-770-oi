@@ -67,12 +67,11 @@ Pinout (looking into Roomba socket):
 | 142 | Sensors | 1 | Passive | 500, C2, 700? | Single packet read. |
 | 143 | Seek Dock | 0 | Passive | 500, C2, 700? | |
 | 144 | PWM Motors | 3 | Safe | 500, C2 | side-brush / vacuum / main-brush PWM. **Unknown on 770.** |
-| 145 | Drive Direct | 4 | Safe | 500, C2, 700? | right_hi/lo, left_hi/lo (signed mm/s). |
+| 145 | Drive Direct | 4 | Safe | 500, C2, 770 | Confirmed on 770 (teleop GUI). |
 | 146 | Drive PWM | 4 | Safe | C2 | right_pwm_hi/lo, left_pwm_hi/lo. **Unknown on 770.** |
-| 147 | Stream | 1+N | Passive | 500, C2 | N = number of packet IDs to stream at 15 Hz. **Unknown on 770.** |
-| 148 | Query List | 1+N | Passive | 500, C2, 700? | Returns N packets back-to-back, one shot. (martinschaef calls 148 STREAM — re-verify.) |
-| 149 | Pause/Resume Stream | 1 | Passive | 500, C2 | 0 = pause, 1 = resume. **Unknown on 770.** |
-| 150 | (varies) | — | — | — | Opcode collision between specs — probe carefully. |
+| 148 | Stream | 1+N | Passive | 500, C2, **770** | N then N packet IDs. Frame: `19, n, [pkt_id, bytes]*, checksum`. On 770 frames arrive much faster than the documented 15 Hz (closer to 50-60 Hz). Confirmed Session 5. |
+| 149 | Query List | 1+N | Passive | 500, C2 | One-shot. **Unknown on 770**; could not test cleanly in the same session as 148. |
+| 150 | Pause/Resume Stream | 1 | Passive | 500, C2 | 0 = pause, 1 = resume. **Unknown on 770**. |
 | 152 | Script | 1+N | Passive | 500, C2 | Store a script of up to 100 bytes. |
 | 153 | Play Script | 0 | Passive | 500, C2 | |
 | 154 | Show Script | 0 | Passive | 500, C2 | Returns the stored script. |

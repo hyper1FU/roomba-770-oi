@@ -27,12 +27,17 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from roomba770.oi import Roomba, hexlify  # noqa: E402
-from scripts._common import add_serial_args, append_worklog, capture_path  # noqa: E402
+from scripts._common import add_serial_args, append_worklog, capture_path, wake_brc  # noqa: E402
 
 
 PACKETS = [7, 35, 22]  # bumps/wheel-drops (1B), OI mode (1B), voltage (2B)
 EXPECTED_PER_FRAME = 1 + 1 + (1 + 1) + (1 + 1) + (1 + 2) + 1
 # header (19) + n + (id + 1B) + (id + 1B) + (id + 2B) + checksum
+
+# Per the 500-series OI spec (and confirmed for the 770 in Session 5):
+#   148 = Stream
+#   149 = Query List
+#   150 = Pause/Resume Stream
 
 
 def parse_stream_frame(buf: bytes) -> tuple[dict | None, int]:
@@ -61,7 +66,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     add_serial_args(ap)
     ap.add_argument("--stream-opcode", type=int, choices=(147, 148), default=148,
-                    help="Which opcode to try as Stream. 500-series=148, Create-2=147.")
+                    help="Which opcode to try as Stream. Per 500/Create-2 spec it's 148. "
+                         "147 was a misreading in earlier versions of this repo.")
+    ap.add_argument("--pause-opcode", type=int, choices=(149, 150), default=150,
+                    help="Which opcode to try as Pause/Resume Stream. Spec says 150.")
     ap.add_argument("--listen-s", type=float, default=3.0,
                     help="How many seconds to capture a stream for.")
     ap.add_argument("--try-query-list", action="store_true",
@@ -79,7 +87,9 @@ def main() -> None:
 
         emit(f"# probe_stream on {args.port}, stream-opcode={args.stream_opcode}, "
              f"packets={PACKETS}")
-        r.drain_input()
+        banner = wake_brc(r)
+        emit(f"> BRC wake; got {len(banner)} bytes during settle "
+             f"(first 32: {hexlify(banner[:32]) or '-'})")
         r.send_opcode(128)  # Start
         time.sleep(0.05)
         r.send_opcode(131)  # Safe
@@ -118,14 +128,19 @@ def main() -> None:
             emit(f"  parsed frames: {frames} (consumed {consumed}/{len(view)} bytes)")
 
         # Pause / resume ----------------------------------------------------
-        emit("> Send Pause Stream (149, 0)")
-        r.send_opcode(149, [0])
+        emit(f"> Send Pause Stream ({args.pause_opcode}, 0)")
+        r.send_opcode(args.pause_opcode, [0])
         time.sleep(0.5)
         leftover = r.drain_input()
         emit(f"  drained {len(leftover)} bytes after pause")
+        # Now wait 1 s and see if any more bytes arrive (i.e. did pause actually pause?)
+        time.sleep(1.0)
+        post_pause = r.drain_input()
+        emit(f"  bytes after 1 s of silence post-pause: {len(post_pause)}  "
+             f"(0 = pause works, >0 = pause didn't take effect)")
 
-        emit("> Send Resume Stream (149, 1)")
-        r.send_opcode(149, [1])
+        emit(f"> Send Resume Stream ({args.pause_opcode}, 1)")
+        r.send_opcode(args.pause_opcode, [1])
         time.sleep(0.5)
         leftover2 = r.read_available(settle_s=0.3)
         emit(f"  read {len(leftover2)} bytes after resume "
@@ -134,15 +149,15 @@ def main() -> None:
             emit(f"  preview: {hexlify(leftover2[:48])}")
 
         # Final pause to stop the stream cleanly
-        r.send_opcode(149, [0])
+        r.send_opcode(args.pause_opcode, [0])
         time.sleep(0.3)
         r.drain_input()
 
         # Optional Query List comparison -----------------------------------
         if args.try_query_list:
-            emit("> Send Query List on opcode 148 with the same packets")
+            emit("> Send Query List on opcode 149 with the same packets")
             r.drain_input()
-            r.send_opcode(148, [n, *PACKETS])
+            r.send_opcode(149, [n, *PACKETS])
             time.sleep(0.4)
             reply = r.read_available(settle_s=0.1)
             emit(f"  reply ({len(reply)}B): {hexlify(reply[:64])}")

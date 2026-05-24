@@ -1,0 +1,62 @@
+# probe_opcodes on COM11 @ 115200
+# selected opcodes: [128, 129, 131, 132, 142, 148, 152, 153, 154, 155, 156, 157, 158, 162, 163, 164, 165, 173]
+> BRC wake pulse; got 0 bytes during settle (hex first 32B: -)
+> Sending Start (128) ...
+  post-Start OI mode = 1 (raw=01)
+> Sending Safe (131) ...
+  post-Safe OI mode = 2 (raw=02)
+> Send 128 (Start                 ) [SCI,500,C2,700?] params=-
+  reply (0B):   (151 ms)
+  post OI mode = 1 (raw=01)
+> Send 129 (Baud                  ) [SCI,500,C2,700?] params=0B
+  reply (0B):   (151 ms)
+  post OI mode = 1 (raw=01)
+> Send 131 (Safe                  ) [500,C2,700?] params=-
+  reply (0B):   (151 ms)
+  post OI mode = 2 (raw=02)
+> Send 132 (Full                  ) [500,C2,700?] params=-
+  reply (0B):   (151 ms)
+  post OI mode = 3 (raw=03)
+> Send 142 (Sensors               ) [500,C2,700?] params=23
+  reply (1B): 03  (151 ms)
+  post OI mode = 3 (raw=03)
+> Send 148 (Stream                ) [500,C2,770] params=01 23
+  reply (45B): 13 02 23 03 C5 13 02 23 03 C5 13 02 23 03 C5 13 02 23 03 C5 13 02 23 03 C5 13 02 23 03 C5 13 02 23 03 C5 13 02 23 03 C5 13 02 23 03 C5  (152 ms)
+  [post-Stream Pause 150,0]  drained 5 B of stream tail
+  post OI mode = 3 (raw=03)
+> Send 152 (Script                ) [500,C2] params=02 9B 00
+  reply (0B):   (151 ms)
+  post OI mode = 3 (raw=03)
+> Send 153 (Play Script           ) [500,C2] params=-
+  reply (0B):   (151 ms)
+  post OI mode = 3 (raw=03)
+> Send 154 (Show Script           ) [500,C2] params=-
+  reply (0B):   (151 ms)
+  post OI mode = 3 (raw=03)
+> Send 155 (Wait Time             ) [500,C2] params=00
+  reply (0B):   (151 ms)
+  post OI mode = 3 (raw=03)
+> Send 156 (Wait Distance         ) [500,C2] params=00 00
+  reply (0B):   (150 ms)
+  post OI mode = 3 (raw=03)
+> Send 157 (Wait Angle            ) [500,C2] params=00 00
+  reply (0B):   (150 ms)
+  post OI mode = 3 (raw=03)
+> Send 158 (Wait Event            ) [500,C2] params=00
+  reply (0B):   (151 ms)
+  post OI mode = 3 (raw=03)
+> Send 162 (Schedule LEDs         ) [C2] params=00 00
+  reply (0B):   (150 ms)
+  post OI mode = 3 (raw=03)
+> Send 163 (Digit LEDs Raw        ) [C2] params=00 00 00 00
+  reply (0B):   (151 ms)
+  post OI mode = 3 (raw=03)
+> Send 164 (Digit LEDs ASCII      ) [C2] params=20 20 20 20
+  reply (0B):   (151 ms)
+  post OI mode = 3 (raw=03)
+> Send 165 (Buttons               ) [C2,700?] params=00
+  reply (0B):   (151 ms)
+  post OI mode = 3 (raw=03)
+> Send 173 (Stop                  ) [C2] params=-
+  reply (77B): 73 74 61 72 74 2D 63 68 61 72 67 65 3A 20 32 30 31 32 2D 30 38 2D 32 32 2D 31 37 35 34 2D 4C 20 20 20 0D 0A 64 6F 2D 63 68 61 72 67 69 6E 67 2D ...  (151 ms)
+  post OI mode = 1 (raw=01)

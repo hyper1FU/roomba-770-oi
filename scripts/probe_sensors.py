@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from roomba770.oi import Roomba, hexlify  # noqa: E402
 from roomba770.opcodes import SENSOR_PACKETS, SENSOR_BY_ID  # noqa: E402
-from scripts._common import add_serial_args, append_worklog, capture_path  # noqa: E402
+from scripts._common import add_serial_args, append_worklog, capture_path, wake_brc  # noqa: E402
 
 
 def decode(packet_id: int, raw: bytes) -> str:
@@ -85,7 +85,9 @@ def main() -> None:
         emit(f"# probe_sensors on {args.port} @ {args.baud}")
         emit(f"# documented={len(documented_ids)}  undocumented_extra={len(extra_ids)}")
 
-        r.drain_input()
+        banner = wake_brc(r)
+        emit(f"> BRC wake pulse; got {len(banner)} bytes during settle "
+             f"(hex first 32B: {hexlify(banner[:32]) or '-'})")
         emit("> Start (128)")
         r.send_opcode(128)
         time.sleep(0.05)

@@ -37,6 +37,19 @@ def add_serial_args(p: argparse.ArgumentParser) -> None:
     )
 
 
+def wake_brc(roomba, low_ms: int = 250, settle_s: float = 0.4) -> bytes:
+    """Pulse DTR low (=BRC low on our cable) to wake the Roomba, then drain
+    whatever boot bytes arrive in ``settle_s``. Returns those drained bytes
+    so the caller can inspect them for a banner. Safe to call even if the
+    robot is already awake."""
+    import time
+    roomba.drain_input()
+    roomba.pulse_brc_via_dtr(low_ms=low_ms)
+    time.sleep(settle_s)
+    n = roomba.ser.in_waiting
+    return roomba.ser.read(n) if n else b""
+
+
 def append_worklog(line: str) -> None:
     """Append a single line (with newline) to WORKLOG.md."""
     worklog = REPO_ROOT / "WORKLOG.md"

@@ -31,14 +31,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from roomba770.oi import Roomba, hexlify  # noqa: E402
 from roomba770.opcodes import OPCODES, OPCODE_BY_NAME  # noqa: E402
-from scripts._common import add_serial_args, append_worklog, capture_path  # noqa: E402
+from scripts._common import add_serial_args, append_worklog, capture_path, wake_brc  # noqa: E402
 
 
 SAFE_TO_PROBE: set[int] = {
-    # Mode / metadata only — none of these move the robot.
+    # Mode / metadata only — none of these move the robot, none of them
+    # persist user state on the robot.
     128, 129, 131, 132, 142, 148, 152, 153, 154,
-    155, 156, 157, 158, 162, 163, 164, 165, 167, 168, 173,
-    # Pause/resume stream needs Stream first; covered in probe_stream.py
+    155, 156, 157, 158, 162, 163, 164, 165, 173,
+    # 167 (Schedule) and 168 (Set Day/Time) overwrite the user's on-robot
+    # schedule and clock — opt in via --include 167 168 if you want them.
+    # Pause/Resume Stream (149) needs Stream first; covered in probe_stream.py.
 }
 
 # Opcodes deliberately *not* sent by this probe. Use a dedicated test for these.
@@ -70,7 +73,9 @@ def parameter_template(opcode: int) -> bytes:
     if opcode == 148:
         return bytes([1, 35])          # 1 packet ID, packet 35
     if opcode == 152:
-        return bytes([1, 153])         # 1-byte script: opcode 153 (Play Script) — no-op
+        # Store a 2-byte script: Wait Time (155) 0 = no-op. Avoid storing
+        # 153 (Play Script) itself — Play Script inside a script recurses.
+        return bytes([2, 155, 0])
     if opcode == 155:
         return bytes([0])              # wait 0.0 s
     if opcode == 156:
@@ -138,7 +143,9 @@ def main() -> None:
 
         emit(f"# probe_opcodes on {args.port} @ {args.baud}")
         emit(f"# selected opcodes: {selected}")
-        r.drain_input()
+        banner = wake_brc(r)
+        emit(f"> BRC wake pulse; got {len(banner)} bytes during settle "
+             f"(hex first 32B: {hexlify(banner[:32]) or '-'})")
 
         # Always Start first.
         emit("> Sending Start (128) ...")
@@ -184,6 +191,14 @@ def main() -> None:
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
             emit(f"  reply ({len(reply)}B): {hexlify(reply[:48])}"
                  f"{' ...' if len(reply) > 48 else ''}  ({elapsed_ms:.0f} ms)")
+
+            # Special case: 148 (Stream) starts a continuous stream. Pause
+            # it now so the next opcode's response isn't polluted.
+            if op_code == 148:
+                r.send_opcode(150, [0])
+                time.sleep(0.3)
+                drained = r.drain_input()
+                emit(f"  [post-Stream Pause 150,0]  drained {len(drained)} B of stream tail")
 
             # post-check
             mode_after, raw_after = post_mode_check(r)

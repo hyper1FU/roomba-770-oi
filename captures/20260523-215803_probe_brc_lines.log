@@ -1,0 +1,51 @@
+# probe_brc_lines on COM11 @ 115200
+
+--- DTR asserted=True pulse=250 ms ---
+  modem-status  idle:    CTS=0 DSR=0 RI=0 CD=0
+  modem-status  pulsed:  CTS=0 DSR=0 RI=0 CD=0
+  modem-status  release: CTS=0 DSR=0 RI=0 CD=0
+  no bytes received.
+
+--- DTR asserted=True pulse=1000 ms ---
+  modem-status  idle:    CTS=0 DSR=0 RI=0 CD=0
+  modem-status  pulsed:  CTS=0 DSR=0 RI=0 CD=0
+  modem-status  release: CTS=0 DSR=0 RI=0 CD=0
+  no bytes received.
+
+--- DTR asserted=False pulse=250 ms ---
+  modem-status  idle:    CTS=0 DSR=0 RI=0 CD=0
+  modem-status  pulsed:  CTS=0 DSR=0 RI=0 CD=0
+  modem-status  release: CTS=0 DSR=0 RI=0 CD=0
+  no bytes received.
+
+--- DTR asserted=False pulse=1000 ms ---
+  modem-status  idle:    CTS=0 DSR=0 RI=0 CD=0
+  modem-status  pulsed:  CTS=0 DSR=0 RI=0 CD=0
+  modem-status  release: CTS=0 DSR=0 RI=0 CD=0
+  no bytes received.
+
+--- RTS asserted=True pulse=250 ms ---
+  modem-status  idle:    CTS=0 DSR=0 RI=0 CD=0
+  modem-status  pulsed:  CTS=0 DSR=0 RI=0 CD=0
+  modem-status  release: CTS=0 DSR=0 RI=0 CD=0
+  no bytes received.
+
+--- RTS asserted=True pulse=1000 ms ---
+  modem-status  idle:    CTS=0 DSR=0 RI=0 CD=0
+  modem-status  pulsed:  CTS=0 DSR=0 RI=0 CD=0
+  modem-status  release: CTS=0 DSR=0 RI=0 CD=0
+  no bytes received.
+
+--- RTS asserted=False pulse=250 ms ---
+  modem-status  idle:    CTS=0 DSR=0 RI=0 CD=0
+  modem-status  pulsed:  CTS=0 DSR=0 RI=0 CD=0
+  modem-status  release: CTS=0 DSR=0 RI=0 CD=0
+  no bytes received.
+
+--- RTS asserted=False pulse=1000 ms ---
+  modem-status  idle:    CTS=0 DSR=0 RI=0 CD=0
+  modem-status  pulsed:  CTS=0 DSR=0 RI=0 CD=0
+  modem-status  release: CTS=0 DSR=0 RI=0 CD=0
+  no bytes received.
+
+VERDICT: none of the 8 BRC variants produced any reply from the Roomba. This strongly suggests the problem is on the data lines (Rx/Tx swap, GND not connected, or broken wire) rather than the BRC control. Inspect the Mini-DIN crimping.

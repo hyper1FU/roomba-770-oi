@@ -1,0 +1,134 @@
+# probe_sensors on COM11 @ 115200
+# documented=63  undocumented_extra=65
+> BRC wake pulse; got 0 bytes during settle (hex first 32B: -)
+> Start (128)
+> Safe (131)
+pkt   0 Group 7..26                      expect=26B got=26B  hex=00 01 00 00 00 00 00 00 00 00 00 00 FF 47 00 05 04 41 57 00 37 1D 0A 88 0A 88                           spec=500,C2,700?
+pkt   1 Group 7..16                      expect=10B got=10B  hex=00 01 00 00 00 00 00 00 00 00                            spec=500,C2,700?
+pkt   2 Group 17..20                     expect=6B got= 6B  hex=00 00 00 00 00 00                                        spec=500,C2,700?
+pkt   3 Group 21..26                     expect=10B got=10B  hex=04 41 3B 00 08 1D 0A 88 0A 88                            spec=500,C2,700?
+pkt   4 Group 27..34                     expect=14B got=14B  hex=00 97 09 55 06 AA 09 08 09 5F 00 00 00 02                           spec=500,C2,700?
+pkt   5 Group 35..42                     expect=12B got=12B  hex=02 00 00 00 00 00 00 00 00 00 00 00                           spec=500,C2,700?
+pkt   6 Group 7..42                      expect=52B got=52B  hex=00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 04 41 3B FF E9 1D 0A 88 0A 88 00 97 09 41 06 AD 08 F4 09 47 00 00 00 02 02 00 00 00 00 00 00 00 00 00 00 00                           spec=500,C2,700?
+pkt 100 Group 7..58                      expect=80B got=80B  hex=00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 04 41 3B FF D9 1D 0A 88 0A 88 00 96 09 43 06 A3 08 F4 09 48 00 00 00 02 02 00 00 00 00 00 00 00 00 00 00 00 16 BA 12 B4 30 00 00 00 04 00 02 00 04 00 96 02 59 00 00 00 0A 00 08 00 0F 00 1A 02                           spec=C2
+pkt 101 Group 43..58                     expect=28B got=28B  hex=16 BA 12 B4 30 00 00 00 08 00 01 00 07 00 96 02 60 00 00 00 0C 00 06 00 0A 00 1A 02                           spec=C2
+pkt 106 Group 46..51                     expect=12B got=12B  hex=00 00 00 09 00 01 00 07 00 95 02 5E                           spec=C2
+pkt 107 Group 54..58                     expect=9B got= 9B  hex=00 0A 00 06 00 0F 00 17 02                               spec=C2
+pkt   7 Bumps & Wheel Drops              expect=1B got= 1B  hex=00                             value=0                   spec=500,C2,700?
+pkt   8 Wall                             expect=1B got= 1B  hex=01                             value=1                   spec=500,C2,700?
+pkt   9 Cliff Left                       expect=1B got= 1B  hex=00                             value=0                   spec=500,C2,700?
+pkt  10 Cliff Front Left                 expect=1B got= 1B  hex=00                             value=0                   spec=500,C2,700?
+pkt  11 Cliff Front Right                expect=1B got= 1B  hex=00                             value=0                   spec=500,C2,700?
+pkt  12 Cliff Right                      expect=1B got= 1B  hex=00                             value=0                   spec=500,C2,700?
+pkt  13 Virtual Wall                     expect=1B got= 1B  hex=00                             value=0                   spec=500,C2,700?
+pkt  14 Wheel Overcurrents               expect=1B got= 1B  hex=00                             value=0                   spec=500,C2,700?
+pkt  15 Dirt Detect                      expect=1B got= 1B  hex=00                             value=0                   spec=500,C2,700?
+pkt  16 Unused                           expect=1B got= 1B  hex=00                             value=0                   spec=500,C2,700?
+pkt  17 Infrared Char Omni               expect=1B got= 1B  hex=00                             value=0                   spec=500,C2,700?
+pkt  18 Buttons                          expect=1B got= 1B  hex=00                             value=0                   spec=500,C2,700?
+pkt  19 Distance                         expect=2B got= 2B  hex=00 00                          value=0                   spec=500,C2,700?
+pkt  20 Angle                            expect=2B got= 2B  hex=00 00                          value=0                   spec=500,C2,700?
+pkt  21 Charging State                   expect=1B got= 1B  hex=04                             value=4                   spec=500,C2,700?
+pkt  22 Voltage                          expect=2B got= 2B  hex=41 1F                          value=16671               spec=500,C2,700?
+pkt  23 Current                          expect=2B got= 2B  hex=FF 9A                          value=-102                spec=500,C2,700?
+pkt  24 Temperature                      expect=1B got= 1B  hex=1D                             value=29                  spec=500,C2,700?
+pkt  25 Battery Charge                   expect=2B got= 2B  hex=0A 88                          value=2696                spec=500,C2,700?
+pkt  26 Battery Capacity                 expect=2B got= 2B  hex=0A 88                          value=2696                spec=500,C2,700?
+pkt  27 Wall Signal                      expect=2B got= 2B  hex=00 95                          value=149                 spec=500,C2,700?
+pkt  28 Cliff Left Signal                expect=2B got= 2B  hex=09 40                          value=2368                spec=500,C2,700?
+pkt  29 Cliff Front Left Signal          expect=2B got= 2B  hex=06 A0                          value=1696                spec=500,C2,700?
+pkt  30 Cliff Front Right Signal         expect=2B got= 2B  hex=08 F2                          value=2290                spec=500,C2,700?
+pkt  31 Cliff Right Signal               expect=2B got= 2B  hex=09 47                          value=2375                spec=500,C2,700?
+pkt  32 Cargo Bay Digital Inputs         expect=1B got= 1B  hex=00                             value=0                   spec=500
+pkt  33 Cargo Bay Analog Input           expect=2B got= 2B  hex=00 00                          value=0                   spec=500
+pkt  34 Charging Sources Available       expect=1B got= 1B  hex=02                             value=2                   spec=500,C2,700?
+pkt  35 OI Mode                          expect=1B got= 1B  hex=02                             value=2                   spec=500,C2,700?
+pkt  36 Song Number                      expect=1B got= 1B  hex=00                             value=0                   spec=500,C2,700?
+pkt  37 Song Playing                     expect=1B got= 1B  hex=00                             value=0                   spec=500,C2,700?
+pkt  38 Number of Stream Packets         expect=1B got= 1B  hex=00                             value=0                   spec=500,C2
+pkt  39 Requested Velocity               expect=2B got= 2B  hex=00 00                          value=0                   spec=500,C2,700?
+pkt  40 Requested Radius                 expect=2B got= 2B  hex=00 00                          value=0                   spec=500,C2,700?
+pkt  41 Requested Right Velocity         expect=2B got= 2B  hex=00 00                          value=0                   spec=500,C2,700?
+pkt  42 Requested Left Velocity          expect=2B got= 2B  hex=00 00                          value=0                   spec=500,C2,700?
+pkt  43 Left Encoder Counts              expect=2B got= 2B  hex=16 BA                          value=5818                spec=C2
+pkt  44 Right Encoder Counts             expect=2B got= 2B  hex=12 B4                          value=4788                spec=C2
+pkt  45 Light Bumper                     expect=1B got= 1B  hex=30                             value=48                  spec=C2
+pkt  46 Light Bump Left Signal           expect=2B got= 2B  hex=00 01                          value=1                   spec=C2
+pkt  47 Light Bump Front-Left Signal     expect=2B got= 2B  hex=00 08                          value=8                   spec=C2
+pkt  48 Light Bump Center-Left Signal    expect=2B got= 2B  hex=00 02                          value=2                   spec=C2
+pkt  49 Light Bump Center-Right Signal   expect=2B got= 2B  hex=00 07                          value=7                   spec=C2
+pkt  50 Light Bump Front-Right Signal    expect=2B got= 2B  hex=00 96                          value=150                 spec=C2
+pkt  51 Light Bump Right Signal          expect=2B got= 2B  hex=02 5B                          value=603                 spec=C2
+pkt  52 IR Char Left                     expect=1B got= 1B  hex=00                             value=0                   spec=C2
+pkt  53 IR Char Right                    expect=1B got= 1B  hex=00                             value=0                   spec=C2
+pkt  54 Left Motor Current               expect=2B got= 2B  hex=00 0C                          value=12                  spec=C2
+pkt  55 Right Motor Current              expect=2B got= 2B  hex=00 08                          value=8                   spec=C2
+pkt  56 Main Brush Motor Current         expect=2B got= 2B  hex=00 0A                          value=10                  spec=C2
+pkt  57 Side Brush Motor Current         expect=2B got= 2B  hex=00 16                          value=22                  spec=C2
+pkt  58 Stasis                           expect=1B got= 1B  hex=02                             value=2                   spec=C2
+# ---- undocumented packet sweep ----
+pkt  59 UNDOC                              got= 1B  hex=00
+pkt  60 UNDOC                              got= 2B  hex=09 32
+pkt  61 UNDOC                              got= 2B  hex=09 1E
+pkt  62 UNDOC                              got= 2B  hex=03 45
+pkt  63 UNDOC                              got= 2B  hex=00 00
+pkt  64 UNDOC                              got= 2B  hex=03 56
+pkt  65 UNDOC                              got= 2B  hex=00 00
+pkt  66 UNDOC                              got= 2B  hex=00 00
+pkt  67 UNDOC                              got= 2B  hex=00 00
+pkt  68 UNDOC                              got= 2B  hex=00 00
+pkt  69 UNDOC                              got= 2B  hex=00 00
+pkt  70 UNDOC                              got= 2B  hex=00 00
+pkt  71 UNDOC                              got= 2B  hex=00 00
+pkt  72 UNDOC                              got= 2B  hex=00 00
+pkt  73 UNDOC                              got= 2B  hex=00 00
+pkt  74 UNDOC                              got= 2B  hex=00 00
+pkt  75 UNDOC                              got= 2B  hex=00 00
+pkt  76 UNDOC                              got= 2B  hex=00 00
+pkt  77 UNDOC                              got= 2B  hex=00 00
+pkt  78 UNDOC                              got= 2B  hex=00 00
+pkt  79 UNDOC                              got= 2B  hex=00 00
+pkt  80 UNDOC                              got= 2B  hex=00 00
+pkt  81 UNDOC                              got= 2B  hex=00 00
+pkt  82 UNDOC                              got= 2B  hex=00 00
+pkt  83 UNDOC                              got= 2B  hex=00 00
+pkt  84 UNDOC                              got= 2B  hex=00 00
+pkt  85 UNDOC                              got= 2B  hex=00 00
+pkt  86 UNDOC                              got= 2B  hex=00 00
+pkt  87 UNDOC                              got= 2B  hex=00 00
+pkt  88 UNDOC                              got= 2B  hex=00 00
+pkt  89 UNDOC                              got= 2B  hex=00 00
+pkt  90 UNDOC                              got= 2B  hex=00 00
+pkt  91 UNDOC                              got= 2B  hex=00 00
+pkt  92 UNDOC                              got= 2B  hex=00 00
+pkt  93 UNDOC                              got= 2B  hex=00 00
+pkt  94 UNDOC                              got= 2B  hex=00 00
+pkt  95 UNDOC                              got= 2B  hex=00 00
+pkt  96 UNDOC                              got= 2B  hex=00 00
+pkt  97 UNDOC                              got= 2B  hex=00 00
+pkt  98 UNDOC                              got= 2B  hex=00 00
+pkt  99 UNDOC                              got= 2B  hex=00 00
+pkt 102 UNDOC                              got= 2B  hex=00 00
+pkt 103 UNDOC                              got= 2B  hex=00 00
+pkt 104 UNDOC                              got= 2B  hex=00 00
+pkt 105 UNDOC                              got= 2B  hex=00 00
+pkt 108 UNDOC                              got=13B  hex=00 09 2A 09 1B 03 45 00 00 03 56 00 00
+pkt 109 UNDOC                              got= 2B  hex=00 00
+pkt 110 UNDOC                              got= 2B  hex=00 00
+pkt 111 UNDOC                              got= 2B  hex=00 00
+pkt 112 UNDOC                              got= 2B  hex=00 00
+pkt 113 UNDOC                              got= 2B  hex=00 00
+pkt 114 UNDOC                              got= 2B  hex=00 00
+pkt 115 UNDOC                              got= 2B  hex=00 00
+pkt 116 UNDOC                              got= 2B  hex=00 00
+pkt 117 UNDOC                              got= 2B  hex=00 00
+pkt 118 UNDOC                              got= 2B  hex=00 00
+pkt 119 UNDOC                              got= 2B  hex=00 00
+pkt 120 UNDOC                              got= 2B  hex=00 00
+pkt 121 UNDOC                              got= 2B  hex=00 00
+pkt 122 UNDOC                              got= 2B  hex=00 00
+pkt 123 UNDOC                              got= 2B  hex=00 00
+pkt 124 UNDOC                              got= 2B  hex=00 00
+pkt 125 UNDOC                              got= 2B  hex=00 00
+pkt 126 UNDOC                              got= 2B  hex=00 00
+pkt 127 UNDOC                              got= 2B  hex=00 00

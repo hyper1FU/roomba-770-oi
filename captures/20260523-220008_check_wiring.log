@@ -1,0 +1,10 @@
+# check_wiring on COM11 @ 115200
+
+[loopback]   success=True  raw=-
+             no echo (expected for Roomba — Tx is connected only to the robot, not back to our Rx).
+[awake-try]  success=False  raw=-
+             no reply within 1 s.
+[wake+DTR]   success=True  raw=01  banner=0 B
+             OI mode reply = 1 after BRC pulse. Wiring confirmed; DTR is connected to BRC.
+
+PASS: Rx/Tx and ground are correctly wired. The Roomba was asleep; pulsing DTR low (BRC wake) woke it up. OI mode reply = 1 after BRC pulse. Wiring confirmed; DTR is connected to BRC.
