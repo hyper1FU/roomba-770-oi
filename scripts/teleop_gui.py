@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from roomba770.oi import Roomba, hexlify  # noqa: E402
 from roomba770 import ir_codes  # noqa: E402
+from roomba770.silent_dock import SilentDockController, TERMINAL_STATES  # noqa: E402
 
 
 # Tick period: how often we recompute velocity and re-send Drive Direct.
@@ -95,6 +96,16 @@ def _read_ir_chars(r: Roomba) -> tuple[int, int, int] | None:
     return data[0], data[1], data[2]
 
 
+def _read_ir_and_charging(r: Roomba) -> tuple[int, int, int, int] | None:
+    """One round-trip: (omni, left, right, charging_state)."""
+    r.drain_input()
+    r.send_opcode(149, [4, 17, 52, 53, 21])
+    data = r.read_exactly(4, timeout_s=0.15)
+    if len(data) != 4:
+        return None
+    return data[0], data[1], data[2], data[3]
+
+
 def _describe_bumps(b: int) -> str:
     if b is None:
         return "?"
@@ -117,6 +128,7 @@ class TeleopApp:
         self.last_sent_vel: tuple[int, int] = (0, 0)
         self.last_sent_pwm: tuple[int, int, int] = (0, 0, 0)
         self.actual_oi_mode: int | None = None
+        self.silent_dock: SilentDockController | None = None
         self._build_ui(default_fwd, default_turn)
         self._bind_keys()
         self.master.after(50, self._connect_initial)
@@ -214,11 +226,25 @@ class TeleopApp:
         dock_btns = tk.Frame(dock)
         dock_btns.pack(fill="x", pady=(6, 0))
         tk.Button(dock_btns, text="Seek Dock (143)",
-                  command=self._seek_dock, bg="#fec", width=18
+                  command=self._seek_dock, bg="#fec", width=16
                   ).pack(side="left")
-        tk.Label(dock_btns,
-                 text="↑ runs firmware autonomy; click Safe to interrupt.",
-                 fg="#888", font=("Consolas", 9)).pack(side="left", padx=(8, 0))
+        tk.Button(dock_btns, text="Silent Dock",
+                  command=self._silent_dock_start, bg="#cef", width=14
+                  ).pack(side="left", padx=(6, 0))
+        tk.Button(dock_btns, text="Cancel",
+                  command=self._silent_dock_cancel, width=8
+                  ).pack(side="left", padx=(6, 0))
+
+        self.silent_dock_var = tk.StringVar(value="silent dock: idle")
+        tk.Label(dock, textvariable=self.silent_dock_var, anchor="w",
+                 font=("Consolas", 10)).pack(fill="x", pady=(4, 0))
+
+        tk.Label(dock,
+                 text="Seek Dock = firmware (vacuum ON).  "
+                      "Silent Dock = our logic (no vacuum / brushes).  "
+                      "Either interrupted by Safe / Cancel / Stop.",
+                 fg="#888", font=("Consolas", 9), wraplength=520, justify="left"
+                 ).pack(anchor="w", pady=(2, 0))
 
         # PWM Motors panel (opcode 144) — disabled by default for safety.
         pwm = tk.LabelFrame(root, text="PWM Motors (opcode 144) — vacuum / brushes",
@@ -368,20 +394,42 @@ class TeleopApp:
         now = time.monotonic()
         active = {k for k, t in self.key_last_seen.items()
                   if now - t < KEY_FRESH_S}
-        fwd_speed = int(self.fwd_slider.get())
-        turn_speed = int(self.turn_slider.get())
 
-        fwd_in = 0
-        turn_in = 0
-        if "Up"    in active: fwd_in  += fwd_speed
-        if "Down"  in active: fwd_in  -= fwd_speed
-        if "Left"  in active: turn_in += turn_speed
-        if "Right" in active: turn_in -= turn_speed
-
-        # Differential mix. Left arrow = CCW = right wheel faster, left
-        # wheel slower (or backward).
-        right_v = max(-500, min(500, fwd_in + turn_in))
-        left_v  = max(-500, min(500, fwd_in - turn_in))
+        # Silent Dock controller overrides arrow keys while active.
+        if self.silent_dock is not None and self.silent_dock.active:
+            reading = _read_ir_and_charging(self.r)
+            if reading is None:
+                self.silent_dock_var.set(
+                    f"silent dock: [{self.silent_dock.state}] no IR reply this tick"
+                )
+                right_v, left_v = 0, 0
+            else:
+                omni, lft, rgt, charging = reading
+                self._update_ir(omni, lft, rgt)
+                right_v, left_v, status = self.silent_dock.step(
+                    omni, lft, rgt, charging
+                )
+                self.silent_dock_var.set(
+                    f"silent dock: [{self.silent_dock.state}] {status}"
+                )
+                if self.silent_dock.state in TERMINAL_STATES:
+                    # Stop wheels; leave controller in its terminal state for
+                    # display, then disarm so arrow keys resume.
+                    right_v, left_v = 0, 0
+                    self.silent_dock = None
+        else:
+            fwd_speed = int(self.fwd_slider.get())
+            turn_speed = int(self.turn_slider.get())
+            fwd_in = 0
+            turn_in = 0
+            if "Up"    in active: fwd_in  += fwd_speed
+            if "Down"  in active: fwd_in  -= fwd_speed
+            if "Left"  in active: turn_in += turn_speed
+            if "Right" in active: turn_in -= turn_speed
+            # Differential mix. Left arrow = CCW = right wheel faster, left
+            # wheel slower (or backward).
+            right_v = max(-500, min(500, fwd_in + turn_in))
+            left_v  = max(-500, min(500, fwd_in - turn_in))
 
         if (right_v, left_v) != self.last_sent_vel or self.tick_n % 4 == 0:
             # Always re-send at least every 4 ticks (200 ms) as a heartbeat.
@@ -472,6 +520,8 @@ class TeleopApp:
         if not self.connected:
             self.status_var.set("status: not connected — can't Seek Dock.")
             return
+        # Cancel Silent Dock if it was running — only one auto behavior at once.
+        self._silent_dock_cancel(quiet=True)
         try:
             # Halt our active heartbeats first so they don't fight the firmware.
             self.r.drive_direct(0, 0)
@@ -488,11 +538,56 @@ class TeleopApp:
             "while the firmware drives. Click Safe or Full to interrupt."
         )
 
+    def _silent_dock_start(self) -> None:
+        if not self.connected:
+            self.status_var.set("status: not connected — can't Silent Dock.")
+            return
+        # Must be in Safe or Full to drive. If we're in Passive (or whatever
+        # Seek Dock left us in), re-issue the requested mode first.
+        try:
+            target = self.mode_target_var.get()
+            self.r.send_opcode(131 if target == 2 else 132)
+            time.sleep(0.05)
+            self.r.drain_input()
+        except Exception:
+            pass
+        # Make sure cleaning motors are positively off.
+        self.pwm_enable_var.set(False)
+        try:
+            self.r.pwm_motors(0, 0, 0)
+            self.last_sent_pwm = (0, 0, 0)
+        except Exception:
+            pass
+        self.silent_dock = SilentDockController()
+        self.silent_dock.start()
+        self.key_last_seen.clear()
+        self.status_var.set(
+            "status: Silent Dock running. Click Cancel / Safe / Stop to abort."
+        )
+
+    def _silent_dock_cancel(self, quiet: bool = False) -> None:
+        if self.silent_dock is None:
+            if not quiet:
+                self.silent_dock_var.set("silent dock: idle")
+            return
+        self.silent_dock = None
+        try:
+            self.r.drive_direct(0, 0)
+            self.last_sent_vel = (0, 0)
+        except Exception:
+            pass
+        self.silent_dock_var.set("silent dock: cancelled")
+        if not quiet:
+            self.status_var.set("status: Silent Dock cancelled.")
+
     # --- OI mode helpers ---------------------------------------------
 
     def _mode_target_changed(self) -> None:
         """User clicked one of the Safe/Full radio buttons."""
         target = self.mode_target_var.get()
+        # Mode change interrupts any autonomous behavior (firmware Seek Dock
+        # or our own Silent Dock).
+        self._silent_dock_cancel(quiet=True)
         if not self.connected:
             return
         try:
@@ -559,6 +654,8 @@ class TeleopApp:
 
     def emergency_stop(self) -> None:
         self.key_last_seen.clear()
+        # Cancel Silent Dock first so it can't re-issue velocity in the next tick.
+        self._silent_dock_cancel(quiet=True)
         try:
             self.r.drive_direct(0, 0)
             self.last_sent_vel = (0, 0)
