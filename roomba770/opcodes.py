@@ -74,7 +74,8 @@ OPCODES: list[Opcode] = [
            "Single packet ID; reply size depends on packet."),
     Opcode(143, "Seek Dock",     0, "passive", ("500", "C2", "700?")),
     Opcode(144, "PWM Motors",    3, "safe",    ("500", "C2"),
-           "side-brush PWM, vacuum PWM, main-brush PWM. UNKNOWN on 770."),
+           "main-brush PWM (signed -127..127), side-brush PWM (signed -127..127), "
+           "vacuum PWM (unsigned 0..127). UNKNOWN on 770."),
     Opcode(145, "Drive Direct",  4, "safe",    ("500", "C2", "700?"),
            "right_hi right_lo left_hi left_lo, signed mm/s."),
     Opcode(146, "Drive PWM",     4, "safe",    ("C2",),

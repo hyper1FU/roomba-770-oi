@@ -1,18 +1,23 @@
-"""Tkinter arrow-key teleop for Roomba 770.
+"""Tkinter arrow-key teleop + PWM Motors panel for Roomba 770.
 
 Keys
 ----
   Up / Down       forward / backward
   Left / Right    rotate in place (CCW / CW)
   Up+Left etc.    curve
-  Space           emergency stop
+  Space           EMERGENCY STOP — halts wheels AND PWM motors, unticks Enable
   R               reconnect (BRC wake -> Start -> Safe)
   Q / Esc / close stop + quit
 
-By design this program never sends Clean (135), Spot (134), Max (136), or
-Motors (138), so the vacuum and brushes never start. The robot is also kept in
-Safe mode, so the firmware will halt motion automatically if a cliff sensor
-trips, a wheel drops, or the charger is connected.
+This program does not send Clean (135), Spot (134), Max (136), or Motors (138).
+The only way to engage the cleaning motors is through the explicit PWM Motors
+panel (opcode 144), which is gated by an Enable checkbox that starts OFF and
+is forced OFF by emergency_stop and Quit. When Enable is OFF the program sends
+(0, 0, 0) to opcode 144 every tick so the motors are positively halted, not
+just left alone.
+
+The robot is kept in Safe mode, so the firmware will halt wheel motion on
+cliff trip / wheel drop / charger attached.
 
 The watchdog stops the wheels if no arrow key has been seen in the last
 ~120 ms (covers OS key-repeat gaps on both Windows and X11).
@@ -98,6 +103,7 @@ class TeleopApp:
         self.connected = False
         self.tick_n = 0
         self.last_sent_vel: tuple[int, int] = (0, 0)
+        self.last_sent_pwm: tuple[int, int, int] = (0, 0, 0)
         self._build_ui(default_fwd, default_turn)
         self._bind_keys()
         self.master.after(50, self._connect_initial)
@@ -114,11 +120,11 @@ class TeleopApp:
 
         # Instructions
         instr = tk.Label(root, justify="left", font=("Consolas", 10), text=(
-            "Hold arrow keys to drive (no vacuum / no brushes):\n"
+            "Arrow keys drive the wheels. PWM Motors panel below controls\n"
+            "the cleaning motors (vacuum / main brush / side brush) via opcode 144.\n"
             "  Up / Down       forward / backward\n"
             "  Left / Right    rotate CCW / CW in place\n"
-            "  Combine arrows  curve\n"
-            "  Space           emergency stop\n"
+            "  Space           EMERGENCY STOP (wheels + PWM Motors)\n"
             "  R               reconnect (BRC wake + Start + Safe)\n"
             "  Q / Esc         quit"
         ))
@@ -153,6 +159,50 @@ class TeleopApp:
         self.turn_slider.set(default_turn)
         self.turn_slider.grid(row=1, column=1, sticky="ew")
         sl.columnconfigure(1, weight=1)
+
+        # PWM Motors panel (opcode 144) — disabled by default for safety.
+        pwm = tk.LabelFrame(root, text="PWM Motors (opcode 144) — vacuum / brushes",
+                            padx=8, pady=4)
+        pwm.pack(fill="x", pady=(10, 0))
+
+        self.pwm_enable_var = tk.BooleanVar(value=False)
+        enable_row = tk.Frame(pwm)
+        enable_row.grid(row=0, column=0, columnspan=7, sticky="w")
+        tk.Checkbutton(enable_row, text="Enable", variable=self.pwm_enable_var,
+                       command=self._pwm_enable_toggled).pack(side="left")
+        tk.Label(enable_row, text="(off forces all PWM to 0 every tick)",
+                 fg="#888").pack(side="left", padx=(6, 0))
+
+        self.main_brush_var = tk.IntVar(value=0)
+        self.side_brush_var = tk.IntVar(value=0)
+        self.vacuum_var     = tk.IntVar(value=0)
+
+        def _add_row(row: int, label: str, var: tk.IntVar,
+                     low: int, high: int, presets: list[int]) -> None:
+            tk.Label(pwm, text=label).grid(row=row, column=0, sticky="w", padx=(0, 6))
+            tk.Scale(pwm, from_=low, to=high, orient="horizontal",
+                     variable=var, length=240).grid(row=row, column=1, sticky="ew")
+            for col, val in enumerate(presets, start=2):
+                tk.Button(pwm, text=str(val), width=4,
+                          command=lambda v=val, var=var: var.set(v)
+                          ).grid(row=row, column=col, padx=1)
+
+        _add_row(1, "Main brush", self.main_brush_var, -127, 127,
+                 [-127, -64, 0, 64, 127])
+        _add_row(2, "Side brush", self.side_brush_var, -127, 127,
+                 [-127, -64, 0, 64, 127])
+        _add_row(3, "Vacuum",     self.vacuum_var,     0,    127,
+                 [0, 32, 64, 96, 127])
+        pwm.columnconfigure(1, weight=1)
+
+        tk.Button(pwm, text="All cleaning motors OFF",
+                  command=self._pwm_all_off, bg="#fcd"
+                  ).grid(row=4, column=0, columnspan=7,
+                         sticky="ew", pady=(6, 0))
+
+        self.pwm_var = tk.StringVar(value="PWM: disabled  (main=0  side=0  vac=0)")
+        tk.Label(root, textvariable=self.pwm_var, anchor="w",
+                 font=("Consolas", 10)).pack(fill="x")
 
         # Buttons
         btn = tk.Frame(root)
@@ -206,6 +256,9 @@ class TeleopApp:
 
     def _on_focus_out(self) -> None:
         self.key_last_seen.clear()
+        # Don't disable PWM on focus-out: the user may want to leave brushes
+        # running while they look at terminal output. The Enable checkbox is
+        # the explicit on/off; emergency_stop / Quit / All-Off always halt.
 
     # --- connect / disconnect ----------------------------------------
 
@@ -279,6 +332,38 @@ class TeleopApp:
             f"keys={sorted(active) or '[]'}"
         )
 
+        # PWM Motors heartbeat. If disabled, force (0,0,0) once and stop
+        # touching the line. If enabled, send the slider values continuously.
+        if self.pwm_enable_var.get():
+            m = max(-127, min(127, self.main_brush_var.get()))
+            s = max(-127, min(127, self.side_brush_var.get()))
+            v = max(0,    min(127, self.vacuum_var.get()))
+            pwm_cmd = (m, s, v)
+            if pwm_cmd != self.last_sent_pwm or self.tick_n % 4 == 0:
+                try:
+                    self.r.pwm_motors(m, s, v)
+                    self.last_sent_pwm = pwm_cmd
+                except Exception as exc:
+                    self.status_var.set(f"status: PWM send failed: {exc!r}")
+                    self.connected = False
+                    return
+            self.pwm_var.set(
+                f"PWM: ENABLED   main={m:+4d}  side={s:+4d}  vac={v:3d}"
+            )
+        else:
+            if self.last_sent_pwm != (0, 0, 0):
+                try:
+                    self.r.pwm_motors(0, 0, 0)
+                    self.last_sent_pwm = (0, 0, 0)
+                except Exception:
+                    pass
+            self.pwm_var.set(
+                f"PWM: disabled  (sliders: "
+                f"main={self.main_brush_var.get():+4d}  "
+                f"side={self.side_brush_var.get():+4d}  "
+                f"vac={self.vacuum_var.get():3d})"
+            )
+
         # Periodic telemetry. Skip if currently driving (so we don't
         # interleave 142 with 145 right when responsiveness matters).
         self.tick_n += 1
@@ -303,6 +388,30 @@ class TeleopApp:
         )
         self.bump_var.set(f"bumpers/wheels: {_describe_bumps(bumps)}")
 
+    # --- PWM Motors helpers ------------------------------------------
+
+    def _pwm_enable_toggled(self) -> None:
+        # When user unchecks Enable, kill the cleaning motors immediately
+        # (don't wait for the next tick).
+        if not self.pwm_enable_var.get():
+            try:
+                self.r.pwm_motors(0, 0, 0)
+                self.last_sent_pwm = (0, 0, 0)
+            except Exception:
+                pass
+
+    def _pwm_all_off(self) -> None:
+        self.pwm_enable_var.set(False)
+        self.main_brush_var.set(0)
+        self.side_brush_var.set(0)
+        self.vacuum_var.set(0)
+        try:
+            self.r.pwm_motors(0, 0, 0)
+            self.last_sent_pwm = (0, 0, 0)
+        except Exception:
+            pass
+        self.status_var.set("status: cleaning motors halted (PWM = 0,0,0).")
+
     # --- actions -----------------------------------------------------
 
     def emergency_stop(self) -> None:
@@ -312,12 +421,24 @@ class TeleopApp:
             self.last_sent_vel = (0, 0)
         except Exception:
             pass
+        # Also halt cleaning motors and force the Enable checkbox off so
+        # the next tick won't restart them.
+        self.pwm_enable_var.set(False)
+        try:
+            self.r.pwm_motors(0, 0, 0)
+            self.last_sent_pwm = (0, 0, 0)
+        except Exception:
+            pass
         self.status_var.set("status: EMERGENCY STOP — wheels halted.")
 
     def quit(self) -> None:
-        # Stop the wheels before we close the port.
+        # Halt wheels AND cleaning motors before we close the port.
         try:
             self.r.drive_direct(0, 0)
+        except Exception:
+            pass
+        try:
+            self.r.pwm_motors(0, 0, 0)
         except Exception:
             pass
         try:

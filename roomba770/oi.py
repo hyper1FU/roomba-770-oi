@@ -140,6 +140,24 @@ class Roomba:
         also never started, so they stay off)."""
         self.drive_direct(0, 0)
 
+    def pwm_motors(self, main_brush: int, side_brush: int, vacuum: int) -> None:
+        """Opcode 144 — variable-speed control of the cleaning system motors.
+
+        Args:
+            main_brush: signed PWM in [-127, 127]. Sign reverses direction.
+            side_brush: signed PWM in [-127, 127]. Sign reverses direction.
+            vacuum:     unsigned PWM in [0, 127]. (Vacuum cannot reverse.)
+
+        Values are clamped silently. Requires Safe or Full mode."""
+        m = max(-127, min(127, int(main_brush)))
+        s = max(-127, min(127, int(side_brush)))
+        v = max(0, min(127, int(vacuum)))
+        self.send_opcode(144, [m & 0xFF, s & 0xFF, v & 0xFF])
+
+    def all_cleaning_motors_off(self) -> None:
+        """Send opcode 144 with all three PWMs at 0."""
+        self.send_opcode(144, [0, 0, 0])
+
 
 def _signed16_be(v: int) -> tuple[int, int]:
     """Clamp v to [-500, 500] (Drive Direct's range) then return (hi, lo)."""

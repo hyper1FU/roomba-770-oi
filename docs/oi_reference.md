@@ -66,7 +66,7 @@ Pinout (looking into Roomba socket):
 | 141 | Play | 1 | Safe | 500, C2, 700? | song#. |
 | 142 | Sensors | 1 | Passive | 500, C2, 700? | Single packet read. |
 | 143 | Seek Dock | 0 | Passive | 500, C2, 700? | |
-| 144 | PWM Motors | 3 | Safe | 500, C2 | side-brush / vacuum / main-brush PWM. **Unknown on 770.** |
+| 144 | PWM Motors | 3 | Safe | 500, C2 | main-brush PWM (signed -127..127), side-brush PWM (signed -127..127), vacuum PWM (unsigned 0..127). **Unknown on 770.** |
 | 145 | Drive Direct | 4 | Safe | 500, C2, 770 | Confirmed on 770 (teleop GUI). |
 | 146 | Drive PWM | 4 | Safe | C2 | right_pwm_hi/lo, left_pwm_hi/lo. **Unknown on 770.** |
 | 148 | Stream | 1+N | Passive | 500, C2, **770** | N then N packet IDs. Frame: `19, n, [pkt_id, bytes]*, checksum`. On 770 frames arrive much faster than the documented 15 Hz (closer to 50-60 Hz). Confirmed Session 5. |
