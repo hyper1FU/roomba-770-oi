@@ -35,6 +35,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from roomba770.oi import Roomba, hexlify  # noqa: E402
+from roomba770 import ir_codes  # noqa: E402
 
 
 # Tick period: how often we recompute velocity and re-send Drive Direct.
@@ -81,6 +82,17 @@ def _read_bumps_and_drops(r: Roomba) -> int | None:
     r.send_opcode(142, [7])
     data = r.read_exactly(1, timeout_s=0.2)
     return data[0] if len(data) == 1 else None
+
+
+def _read_ir_chars(r: Roomba) -> tuple[int, int, int] | None:
+    """Packets 17 (omni), 52 (left), 53 (right). Returns (omni, left, right)."""
+    r.drain_input()
+    # Use Query List (149) so the firmware returns all three back-to-back.
+    r.send_opcode(149, [3, 17, 52, 53])
+    data = r.read_exactly(3, timeout_s=0.2)
+    if len(data) != 3:
+        return None
+    return data[0], data[1], data[2]
 
 
 def _describe_bumps(b: int) -> str:
@@ -183,6 +195,30 @@ class TeleopApp:
         self.turn_slider.set(default_turn)
         self.turn_slider.grid(row=1, column=1, sticky="ew")
         sl.columnconfigure(1, weight=1)
+
+        # Dock / IR panel ------------------------------------------
+        dock = tk.LabelFrame(root, text="Home Base / IR (packets 17 / 52 / 53)",
+                             padx=8, pady=4)
+        dock.pack(fill="x", pady=(10, 0))
+
+        self.ir_omni_var  = tk.StringVar(value="omni:  --")
+        self.ir_left_var  = tk.StringVar(value="left:  --")
+        self.ir_right_var = tk.StringVar(value="right: --")
+        self.dock_hint_var = tk.StringVar(value="dock hint: --")
+        for v in (self.ir_omni_var, self.ir_left_var, self.ir_right_var):
+            tk.Label(dock, textvariable=v, anchor="w",
+                     font=("Consolas", 10)).pack(fill="x")
+        tk.Label(dock, textvariable=self.dock_hint_var, anchor="w",
+                 font=("Consolas", 10, "bold")).pack(fill="x", pady=(2, 0))
+
+        dock_btns = tk.Frame(dock)
+        dock_btns.pack(fill="x", pady=(6, 0))
+        tk.Button(dock_btns, text="Seek Dock (143)",
+                  command=self._seek_dock, bg="#fec", width=18
+                  ).pack(side="left")
+        tk.Label(dock_btns,
+                 text="↑ runs firmware autonomy; click Safe to interrupt.",
+                 fg="#888", font=("Consolas", 9)).pack(side="left", padx=(8, 0))
 
         # PWM Motors panel (opcode 144) — disabled by default for safety.
         pwm = tk.LabelFrame(root, text="PWM Motors (opcode 144) — vacuum / brushes",
@@ -407,6 +443,9 @@ class TeleopApp:
             mode_reply = self.r.query_sensor(35, 1, timeout_s=0.2)
             if len(mode_reply) == 1:
                 self._update_actual_mode(mode_reply[0])
+            ir = _read_ir_chars(self.r)
+            if ir is not None:
+                self._update_ir(*ir)
         except Exception as exc:
             self.tele_var.set(f"telemetry: error {exc!r}")
             return
@@ -420,6 +459,34 @@ class TeleopApp:
             f"mAh ({t['battery_pct']:.0f}%)  state={cs_name}"
         )
         self.bump_var.set(f"bumpers/wheels: {_describe_bumps(bumps)}")
+
+    # --- IR / Dock helpers -------------------------------------------
+
+    def _update_ir(self, omni: int, left: int, right: int) -> None:
+        self.ir_omni_var.set (f"omni:  0x{omni:02X}  ({ir_codes.describe(omni)})")
+        self.ir_left_var.set (f"left:  0x{left:02X}  ({ir_codes.describe(left)})")
+        self.ir_right_var.set(f"right: 0x{right:02X}  ({ir_codes.describe(right)})")
+        self.dock_hint_var.set(f"dock hint: {ir_codes.dock_hint(omni, left, right)}")
+
+    def _seek_dock(self) -> None:
+        if not self.connected:
+            self.status_var.set("status: not connected — can't Seek Dock.")
+            return
+        try:
+            # Halt our active heartbeats first so they don't fight the firmware.
+            self.r.drive_direct(0, 0)
+            self.last_sent_vel = (0, 0)
+            self.pwm_enable_var.set(False)
+            self.r.pwm_motors(0, 0, 0)
+            self.last_sent_pwm = (0, 0, 0)
+            self.r.seek_dock()
+        except Exception as exc:
+            self.status_var.set(f"status: Seek Dock failed: {exc!r}")
+            return
+        self.status_var.set(
+            "status: Seek Dock (143) sent. OI mode will drop to Passive "
+            "while the firmware drives. Click Safe or Full to interrupt."
+        )
 
     # --- OI mode helpers ---------------------------------------------
 

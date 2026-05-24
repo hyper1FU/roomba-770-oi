@@ -158,6 +158,18 @@ class Roomba:
         """Send opcode 144 with all three PWMs at 0."""
         self.send_opcode(144, [0, 0, 0])
 
+    def seek_dock(self) -> None:
+        """Opcode 143 — start autonomous return-to-dock behavior.
+
+        Side effects:
+            - OI mode auto-drops to Passive while the firmware drives.
+            - Robot will accept no Drive Direct commands until you re-enter
+              Safe or Full (which also interrupts the seek).
+            - If the robot can't find the dock it will keep searching until
+              it gives up, hits something, or you intervene.
+        """
+        self.send_opcode(143)
+
 
 def _signed16_be(v: int) -> tuple[int, int]:
     """Clamp v to [-500, 500] (Drive Direct's range) then return (hi, lo)."""
