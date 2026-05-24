@@ -104,6 +104,7 @@ class TeleopApp:
         self.tick_n = 0
         self.last_sent_vel: tuple[int, int] = (0, 0)
         self.last_sent_pwm: tuple[int, int, int] = (0, 0, 0)
+        self.actual_oi_mode: int | None = None
         self._build_ui(default_fwd, default_turn)
         self._bind_keys()
         self.master.after(50, self._connect_initial)
@@ -146,6 +147,29 @@ class TeleopApp:
         self.bump_var = tk.StringVar(value="bumpers/wheels: --")
         tk.Label(root, textvariable=self.bump_var,
                  anchor="w", font=("Consolas", 10)).pack(fill="x")
+
+        # OI mode selector (Safe vs Full) ---------------------------
+        mode_frame = tk.LabelFrame(root, text="OI mode", padx=8, pady=4)
+        mode_frame.pack(fill="x", pady=(10, 0))
+
+        self.mode_target_var = tk.IntVar(value=2)   # 2 = Safe, 3 = Full
+        tk.Radiobutton(
+            mode_frame,
+            text="Safe (131) — firmware halts on cliff / wheel-drop / charger",
+            variable=self.mode_target_var, value=2,
+            command=self._mode_target_changed,
+        ).pack(anchor="w")
+        tk.Radiobutton(
+            mode_frame,
+            text="Full (132) — NO safeties; robot will drive off a table",
+            variable=self.mode_target_var, value=3,
+            command=self._mode_target_changed,
+            fg="#b00", font=("Consolas", 10, "bold"),
+        ).pack(anchor="w")
+
+        self.actual_mode_var = tk.StringVar(value="actual OI mode: ?")
+        tk.Label(mode_frame, textvariable=self.actual_mode_var,
+                 font=("Consolas", 10, "bold")).pack(anchor="w", pady=(2, 0))
 
         # Speed sliders
         sl = tk.LabelFrame(root, text="speeds (mm/s)", padx=8, pady=4)
@@ -266,16 +290,24 @@ class TeleopApp:
         self._connect()
 
     def _connect(self) -> None:
-        self.status_var.set("status: connecting (BRC wake + Start + Safe)...")
+        target = self.mode_target_var.get()
+        target_op = 131 if target == 2 else 132
+        target_name = "Safe" if target == 2 else "Full"
+        self.status_var.set(
+            f"status: connecting (BRC wake + Start + {target_name})..."
+        )
         self.master.update_idletasks()
         try:
             self.r.drain_input()
             self.r.pulse_brc_via_dtr(low_ms=250)
             self.r.drain_input()
-            self.r.send_opcode(128)  # Start -> Passive
+            self.r.send_opcode(128)              # Start -> Passive
             time.sleep(0.05)
-            self.r.send_opcode(131)  # Safe
+            self.r.send_opcode(131)              # always pass through Safe
             time.sleep(0.05)
+            if target_op == 132:                 # if user wants Full, escalate
+                self.r.send_opcode(132)
+                time.sleep(0.05)
             mode = self.r.query_sensor(35, 1, timeout_s=0.5)
         except Exception as exc:
             self.status_var.set(f"status: connect failed: {exc!r}")
@@ -287,10 +319,8 @@ class TeleopApp:
             self.connected = False
             return
         self.connected = True
-        self.status_var.set(
-            f"status: connected. OI mode = {mode[0]} "
-            f"({['off','passive','safe','full'][mode[0]] if mode[0]<4 else '?'})"
-        )
+        self._update_actual_mode(mode[0])
+        self.status_var.set(f"status: connected. target = {target_name}.")
 
     # --- main tick ---------------------------------------------------
 
@@ -374,6 +404,9 @@ class TeleopApp:
         try:
             t = _read_group_3(self.r)
             bumps = _read_bumps_and_drops(self.r)
+            mode_reply = self.r.query_sensor(35, 1, timeout_s=0.2)
+            if len(mode_reply) == 1:
+                self._update_actual_mode(mode_reply[0])
         except Exception as exc:
             self.tele_var.set(f"telemetry: error {exc!r}")
             return
@@ -387,6 +420,49 @@ class TeleopApp:
             f"mAh ({t['battery_pct']:.0f}%)  state={cs_name}"
         )
         self.bump_var.set(f"bumpers/wheels: {_describe_bumps(bumps)}")
+
+    # --- OI mode helpers ---------------------------------------------
+
+    def _mode_target_changed(self) -> None:
+        """User clicked one of the Safe/Full radio buttons."""
+        target = self.mode_target_var.get()
+        if not self.connected:
+            return
+        try:
+            if target == 2:
+                self.r.send_opcode(131)          # Safe
+            elif target == 3:
+                # Full requires being in Safe (or Passive) first; the firmware
+                # accepts 132 from either, so just send it.
+                self.r.send_opcode(132)
+            time.sleep(0.05)
+            reply = self.r.query_sensor(35, 1, timeout_s=0.3)
+            if len(reply) == 1:
+                self._update_actual_mode(reply[0])
+            self.status_var.set(
+                f"status: mode change requested -> "
+                f"{'Safe' if target == 2 else 'Full'}"
+            )
+        except Exception as exc:
+            self.status_var.set(f"status: mode change failed: {exc!r}")
+
+    def _update_actual_mode(self, mode_int: int) -> None:
+        """Refresh the 'actual OI mode' label and warn on auto-fallback."""
+        self.actual_oi_mode = mode_int
+        names = {0: "off", 1: "passive", 2: "safe", 3: "full"}
+        name = names.get(mode_int, "?")
+        warn = ""
+        target = self.mode_target_var.get()
+        if mode_int == 1 and target in (2, 3):
+            # Firmware dropped us back to Passive — typically a safety event.
+            warn = "  <-- DROPPED TO PASSIVE (safety event?). Click Safe or Full to re-arm."
+        elif mode_int == 0:
+            warn = "  <-- OFF (Stop sent, or robot reset). Click Reconnect."
+        elif mode_int != target:
+            warn = f"  <-- != target ({target})"
+        self.actual_mode_var.set(
+            f"actual OI mode: {mode_int} ({name}){warn}"
+        )
 
     # --- PWM Motors helpers ------------------------------------------
 
