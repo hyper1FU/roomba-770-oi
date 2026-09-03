@@ -509,3 +509,52 @@ in our case is the factory default — the user hasn't set it). The trailing
 - 2026-05-24 12:19:45  probe_stream: stream-op=148, captured=1960 bytes, file=20260524-121938_probe_stream.log
 - 2026-05-24 12:20:46  probe_opcodes: probed 18 opcodes on COM11, file=20260524-122041_probe_opcodes.log
 - 2026-05-24 12:21:44  capture_stop_banner on COM11: 978 bytes, file=20260524-122131_stop_banner.bin
+
+---
+
+## 2026-09-03 — Session 6: network pass-through (no hardware involved)
+
+**⚠ Nothing in this session touched the robot.** All checks ran against a
+**mock ESP32 + mock Roomba** on localhost, so **no capture was kept** --
+`captures/` stays a record of the real 770 only.
+
+### What changed
+
+`Roomba.open()` now goes through `serial_for_url()`, so a script reaches the
+robot either way:
+
+```
+Roomba("COM11")                        # USB-serial cable, as before
+Roomba("socket://192.168.1.50:4000")   # via the ESP32 on the robot
+```
+
+The ESP32 bridges TCP to the Roomba's UART. BRC moved to a second TCP port
+(data port + 1) because the ESP32 drives BRC from a GPIO, not from DTR;
+`pulse_brc()` picks the right route automatically.
+
+### The bug this uncovered
+
+`read_available()` sized its read with `ser.in_waiting`. **pyserial's
+`socket://` transport returns 1 whenever any data is pending** -- a flag, not
+a count. We were reading one byte per call, about 20 B/s, against a 66 Hz
+sensor stream of ~5 kB/s.
+
+| | |
+| --- | --- |
+| `in_waiting` with 300+ bytes buffered | **1** |
+| raw socket read, same second | 1310 bytes |
+| stream through `oi.py`, before | **2.0 Hz** |
+| stream through `oi.py`, after | **63.3 Hz** (raw socket: 64.5 Hz) |
+
+`read_buffered()` replaces the arithmetic with a short read timeout, which
+behaves the same on a real port and a socket.
+
+### Verified
+
+`probe_sensors.py --port socket://127.0.0.1:4000` exits 0 and reads every
+packet, including the 770 deviations the mock reproduces (`Stasis == 2`, no
+banner on BRC wake).
+
+**Still unverified against the real robot**: everything above. The mock has
+no latency (loopback) and never drops a byte, so it says nothing about how
+the pass-through behaves over WiFi.

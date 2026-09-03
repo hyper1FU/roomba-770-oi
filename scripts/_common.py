@@ -44,10 +44,12 @@ def wake_brc(roomba, low_ms: int = 250, settle_s: float = 0.4) -> bytes:
     robot is already awake."""
     import time
     roomba.drain_input()
-    roomba.pulse_brc_via_dtr(low_ms=low_ms)
+    # pulse_brc() dispatches: control port over the pass-through, DTR on a
+    # real cable. pulse_brc_via_dtr() would be a no-op over TCP.
+    roomba.pulse_brc(low_ms=low_ms)
     time.sleep(settle_s)
-    n = roomba.ser.in_waiting
-    return roomba.ser.read(n) if n else b""
+    # in_waiting is unusable on socket:// -- see Roomba.read_buffered().
+    return roomba.read_buffered()
 
 
 def append_worklog(line: str) -> None:

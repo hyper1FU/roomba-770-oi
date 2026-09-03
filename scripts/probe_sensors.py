@@ -117,7 +117,8 @@ def main() -> None:
                 r.send_opcode(142, [pid])
                 # We don't know the expected size; just see what shows up.
                 time.sleep(args.per_packet_timeout)
-                raw = bytes(r.ser.read(r.ser.in_waiting))
+                # in_waiting is unusable on socket:// -- see read_buffered().
+                raw = bytes(r.read_buffered())
                 if raw:
                     emit(f"pkt {pid:>3} UNDOC                              "
                          f"got={len(raw):>2}B  hex={hexlify(raw[:32])}")
