@@ -635,3 +635,60 @@ changes as a result of this finding.
   packet **35 (OI mode = Passive)**, not Stasis. Session 2's `Stasis == 2`
   claim was **not** re-checked here and remains as recorded.
 - Everything about driving. Nothing was commanded to move this session.
+
+---
+
+## Session 8 — 2026-09-03 — `Battery Charge (25)` comes back signed
+
+The robot announced "please charge me" out loud. There is **no OI packet for
+the spoken announcement** — no event, no flag. So we read the underlying
+battery state through the pass-through instead.
+
+| packet | value |
+| --- | --- |
+| 21 Charging State | 4 (waiting) |
+| 34 Charging Sources | 0 (none) |
+| 22 Voltage | 11717 mV |
+| 23 Current | **−164 mA** (discharging) |
+| 24 Battery Temperature | 25 °C |
+| 26 Battery Capacity | 2696 mAh |
+| **25 Battery Charge** | **`0xFFFB`** |
+
+### The deviation
+
+The OI spec says packet 25 is **unsigned**. Read that way it is
+**65531 mAh** — and `charge / capacity × 100` gives **2431 %**. Our first
+script did exactly that and printed a nonsense number.
+
+Read as **signed 16-bit it is −5 mAh**, which is the only reading that makes
+sense: the pack is empty, marginally below the gauge's zero reference.
+
+**This is the machine-readable equivalent of the spoken warning.** There is no
+other signal for it.
+
+### Why it matters more than it looks
+
+`silent_dock` / the rework in Phase 4 triggers a return-to-dock on **low
+battery**. Written the obvious way, the trigger reads *maximum* charge exactly
+when the battery is flat — the opposite of fail-safe. And it **cannot be caught
+in testing on a charged robot**: the bug only appears as the pack empties.
+
+**Read packet 25 as signed and clamp negatives to zero.**
+
+### Caveats
+
+- **One observation.** Re-check on a charged pack. If a full battery returns a
+  sane unsigned value, the rule is "goes negative only near empty".
+- The frame is almost certainly not misaligned: 26 (2696 mAh) and 22
+  (11717 mV) in the same exchange are both plausible values.
+
+### Unexplained: packet 22 vs. the board's own ADC
+
+At the same moment, the MAIN board's Vpwr ADC read **8.97 V** against the
+robot's reported **11.72 V** — a 2.75 V gap. The board is not at fault: a
+tester on TP1 later agreed with the ADC to within 0.04 V at 9.76 V, and to
+within 0.02 V at 11.81 V earlier in the day.
+
+The robot stopped responding shortly after (flat battery), so this was
+measured at a degenerate operating point. **Not explained; not to be
+generalised.** Re-measure all three points after charging.
