@@ -692,3 +692,28 @@ within 0.02 V at 11.81 V earlier in the day.
 The robot stopped responding shortly after (flat battery), so this was
 measured at a degenerate operating point. **Not explained; not to be
 generalised.** Re-measure all three points after charging.
+
+---
+
+## Session 9 — 2026-09-03 — `Seek Dock (143)` runs the cleaning motors
+
+**Confirmed on the real robot.** Until now this was an assumption carried in the
+sibling project's design notes; it is now a measured fact.
+
+| | |
+| --- | --- |
+| `143 Seek Dock` | **runs the main brush / side brush / vacuum** |
+| OI mode during the seek | drops to **Passive** |
+| `Drive Direct` during the seek | **not accepted** |
+| Interrupting it | send `Safe (131)` or `Full (132)` |
+
+### Why it matters beyond the noise
+
+The exhibition project forbids running the cleaning motors, so `143` cannot be
+part of its normal behaviour. But there is a second, sharper consequence:
+
+**an emergency stop implemented as `Drive Direct(0,0)` does not stop a robot
+that is running `143`** — the robot is in Passive and ignores it. Anything that
+issues `143` must also be able to issue `Safe (131)` to break out.
+
+This closes one of the open questions about which opcodes are usable on the 770.
