@@ -466,7 +466,7 @@ in our case is the factory default — the user hasn't set it). The trailing
 | Aspect | 500 / Create-2 spec | 770 actual | Delta |
 | --- | --- | --- | --- |
 | Mini-DIN 7-pin, 115200 8N1 | yes | yes | — |
-| BRC wake banner | "Roomba by iRobot! version X.Y" | **silent** | DEVIATION |
+| BRC wake banner | "Roomba by iRobot! version X.Y" | **different text, and only sometimes** — see Session 7 | REVISED (was "silent") |
 | Modes 0/1/2/3 | Off/Passive/Safe/Full | same | — |
 | Documented opcodes 128..173 (safe ones) | all spec'd | all accepted | — |
 | `Stop (173)` post-mode | Off (0) | **Passive (1)** | DEVIATION |
@@ -558,3 +558,80 @@ banner on BRC wake).
 **Still unverified against the real robot**: everything above. The mock has
 no latency (loopback) and never drops a byte, so it says nothing about how
 the pass-through behaves over WiFi.
+
+---
+
+## Session 7 — 2026-09-03 — first run against the real robot over the ESP32 pass-through
+
+Hardware in the loop for the first time: PC → WiFi → ESP32 (MAIN board) →
+UART1 → Roomba OI. No USB-serial cable to the robot at all.
+
+**Port string is the only change**: `--port socket://192.168.68.5:4000`.
+
+### Throughput over WiFi
+
+| | |
+| --- | --- |
+| `Stream (148)` frames in 10.0 s | **639 → 63.6 Hz** |
+| unparsed bytes left over | **0** |
+| `uart_ovf` on the ESP32 | **0** |
+| RSSI | −33 to −35 dBm |
+
+63.6 Hz against 64.5 Hz measured on the mock's loopback. **WiFi costs nothing
+measurable in throughput**, and nothing was dropped in either direction.
+The 66 Hz figure from Session 2 stands.
+
+### The banner exists. Session 2's "silent" line was wrong.
+
+The very first BRC pulse of the session produced this, verbatim:
+
+```
+key-wakeup
+slept for 1 minutes 14 seconds
+2012-08-22-1754-L
+r3_orion/tags/release-1.1.7:1031 CLEAN
+bootloader id: 4718 4C59 4...
+```
+
+**This answers open question 1** (the firmware fingerprint), and it is *not*
+the 500-series `Roomba by iRobot!` text at all — different format entirely,
+which is why "silent" and "no banner" were the wrong conclusions rather than
+merely incomplete ones.
+
+| | |
+| --- | --- |
+| firmware | **`r3_orion/tags/release-1.1.7:1031 CLEAN`** |
+| build date | `2012-08-22-1754-L` |
+| wake reason reported | `key-wakeup` |
+
+### ...but we could not reproduce it. The trigger is still unknown.
+
+Session 2 proposed disambiguating with `Power (133)` + a long listen. Done,
+twice, and **it does not work**:
+
+| attempt | result |
+| --- | --- |
+| `Power(133)`, wait 3 s, BRC 250 ms | **0 bytes** |
+| `Power(133)`, wait 40 s, BRC 250 ms | **0 bytes** (also 0 bytes spontaneous during the wait) |
+
+So `Power (133)` does **not** put the robot into whatever state prints the
+banner. The one time it printed, the robot had reached that state on its own
+and reported **74 seconds** of sleep.
+
+**Leading hypothesis, untested**: there is a minimum sleep duration, somewhere
+**between 40 s and 74 s**, before a wake counts as a `key-wakeup` from deep
+sleep. Testing it means idling the robot without sending anything for a few
+minutes and pulsing BRC — cheap, but it needs an uninterrupted robot.
+
+**What is safe to rely on right now**: the banner may or may not appear.
+**Never synchronise on it.** Use `Start (128)` → `Sensors (142, 35)` and check
+the OI mode reply, exactly as `oi.py` already does. Nothing in the code
+changes as a result of this finding.
+
+### Still unverified
+
+- Whether `Stasis (58)` really returns 2. This session's last frame read
+  `{7: 0, 35: 2, 22: 14361, 21: 4, 45: 0, 17: 0, 52: 0, 53: 0}` — that 2 is
+  packet **35 (OI mode = Passive)**, not Stasis. Session 2's `Stasis == 2`
+  claim was **not** re-checked here and remains as recorded.
+- Everything about driving. Nothing was commanded to move this session.
